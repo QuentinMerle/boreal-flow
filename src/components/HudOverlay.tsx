@@ -18,6 +18,8 @@ export const HudOverlay: React.FC = () => {
   const audioMuted = useGameStore((s) => s.audioMuted);
   const binocularsActive = useGameStore((s) => s.binocularsActive);
   const discoveredBirds = useGameStore((s) => s.discoveredBirds);
+  const cameraMode = useGameStore((s) => s.cameraMode);
+  const gamepadConnected = useGameStore((s) => s.gamepadConnected);
 
   const setMode = useGameStore((s) => s.setMode);
   const respawnAt = useGameStore((s) => s.respawnAt);
@@ -25,6 +27,7 @@ export const HudOverlay: React.FC = () => {
   const toggleTimePause = useGameStore((s) => s.toggleTimePause);
   const toggleAudioMute = useGameStore((s) => s.toggleAudioMute);
   const toggleBinoculars = useGameStore((s) => s.toggleBinoculars);
+  const toggleCameraMode = useGameStore((s) => s.toggleCameraMode);
 
   const speedDomRef = useRef<HTMLSpanElement>(null);
   const surfaceDomRef = useRef<HTMLSpanElement>(null);
@@ -326,6 +329,20 @@ export const HudOverlay: React.FC = () => {
             >
               <span>Phase 4.2 • Cozy Campfire & Emotes</span>
               <span
+                style={{
+                  background: gamepadConnected ? '#06d6a0' : 'rgba(255,255,255,0.08)',
+                  color: gamepadConnected ? '#141d1b' : '#7c8f88',
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  letterSpacing: '0.04em',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                {gamepadConnected ? '🎮 GAMEPAD READY' : '⌨️ KEYBOARD'}
+              </span>
+              <span
                 ref={headlampDomRef}
                 style={{
                   background: '#ffd166',
@@ -402,6 +419,24 @@ export const HudOverlay: React.FC = () => {
                   }}
                 >
                   {mode === 'BIKE' ? '🔔 Bike Bell (C)' : '👋 Chime / Wave (C)'}
+                </button>
+                <button
+                  onClick={() => {
+                    soundscape.init();
+                    toggleCameraMode();
+                  }}
+                  style={{
+                    background: cameraMode === 'COCKPIT' ? '#ff9b54' : 'rgba(255,255,255,0.12)',
+                    color: cameraMode === 'COCKPIT' ? '#141d1b' : '#f4f1ea',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '3px 8px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {cameraMode === 'COCKPIT' ? '🎥 Cockpit (V)' : '🎥 Diorama (V)'}
                 </button>
                 <button
                   onClick={() => {
@@ -597,17 +632,27 @@ export const HudOverlay: React.FC = () => {
 
           <div
             style={{
-              background: 'rgba(20, 29, 27, 0.72)',
+              background: 'rgba(20, 29, 27, 0.78)',
               padding: '8px 14px',
               borderRadius: '8px',
-              fontSize: '12px',
+              fontSize: '11.5px',
               color: '#c2d1cb',
               border: '1px solid rgba(255,255,255,0.08)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px',
             }}
           >
-            <strong>WASD / ZQSD:</strong> Steer & Propel • <strong>C:</strong> Bike Bell / Wave Emote •{' '}
-            <strong>E:</strong> Campfire / Zipline / Rack • <strong>B:</strong> Binoculars •{' '}
-            <strong>Space:</strong> Drift / Bunny-Hop
+            <div>
+              <strong>WASD / ZQSD:</strong> Steer & Throttle • <strong>V:</strong> Cockpit / Diorama •{' '}
+              <strong>C / F:</strong> Bell / Wave • <strong>E:</strong> Campfire / Zipline •{' '}
+              <strong>B:</strong> Binoculars • <strong>Space:</strong> Hop / Powerslide
+            </div>
+            <div style={{ color: gamepadConnected ? '#06d6a0' : '#889e95', fontSize: '11px' }}>
+              <strong>🎮 Gamepad:</strong> Left Stick Steer • <strong>RT:</strong> Throttle • <strong>LT:</strong> Drift •{' '}
+              <strong>A:</strong> Hop • <strong>X:</strong> Action • <strong>Y / RB:</strong> Bell •{' '}
+              <strong>R3 / L3:</strong> Cockpit • <strong>LB:</strong> Binoculars
+            </div>
           </div>
         </div>
 

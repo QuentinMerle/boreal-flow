@@ -5,6 +5,7 @@ export type MovementMode = 'WALK' | 'LONGBOARD' | 'BIKE' | 'CANOE';
 export type SurfaceType = 'ASPHALT' | 'DIRT' | 'GRASS' | 'ROCK' | 'SAND' | 'WATER';
 export type TimePreset = 'DAWN' | 'NOON' | 'GOLDEN' | 'NIGHT';
 export type SpecialActionState = 'NONE' | 'CLIMBING' | 'ZIPLINE' | 'CAMPFIRE';
+export type CameraMode = 'DIORAMA' | 'COCKPIT';
 
 export interface PhysicsPreset {
   label: string;
@@ -119,6 +120,10 @@ export interface MutablePhysicsState {
   // Phase 4.2: Non-Verbal Emote / Bell & Campfire Hub
   emoteTimer: number;
   emoteCounter: number;
+  // Session 2: Hybrid Camera & Gamepad
+  cameraMode: CameraMode;
+  gamepadConnected: boolean;
+  gamepadName: string;
 }
 
 export const mutablePhysics: MutablePhysicsState = {
@@ -152,6 +157,9 @@ export const mutablePhysics: MutablePhysicsState = {
   scanProgress: 0,
   emoteTimer: 0,
   emoteCounter: 0,
+  cameraMode: 'DIORAMA',
+  gamepadConnected: false,
+  gamepadName: '',
 };
 
 export function triggerPoofEffect(pos: THREE.Vector3) {
@@ -174,6 +182,8 @@ interface GameUIState {
   audioMuted: boolean;
   binocularsActive: boolean;
   discoveredBirds: string[];
+  cameraMode: CameraMode;
+  gamepadConnected: boolean;
   setMode: (mode: MovementMode, withPoof?: boolean) => void;
   respawnAt: (target: SpawnLocation, defaultMode?: MovementMode) => void;
   setTimePreset: (preset: TimePreset) => void;
@@ -182,6 +192,9 @@ interface GameUIState {
   toggleBinoculars: () => void;
   setBinocularsActive: (active: boolean) => void;
   discoverBird: (birdId: string) => void;
+  toggleCameraMode: () => void;
+  setCameraMode: (mode: CameraMode) => void;
+  setGamepadConnected: (connected: boolean) => void;
 }
 
 export const TIME_PRESET_HOURS: Record<TimePreset, number> = {
@@ -199,6 +212,8 @@ export const useGameStore = create<GameUIState>((set) => ({
   audioMuted: false,
   binocularsActive: false,
   discoveredBirds: [],
+  cameraMode: 'DIORAMA',
+  gamepadConnected: false,
   setMode: (mode, withPoof = true) =>
     set((state) => {
       if (mutablePhysics.specialState === 'CAMPFIRE') {
@@ -242,4 +257,18 @@ export const useGameStore = create<GameUIState>((set) => ({
         ? s
         : { discoveredBirds: [...s.discoveredBirds, birdId] }
     ),
+  toggleCameraMode: () =>
+    set((s) => {
+      const next: CameraMode = s.cameraMode === 'DIORAMA' ? 'COCKPIT' : 'DIORAMA';
+      mutablePhysics.cameraMode = next;
+      return { cameraMode: next };
+    }),
+  setCameraMode: (mode) => {
+    mutablePhysics.cameraMode = mode;
+    set({ cameraMode: mode });
+  },
+  setGamepadConnected: (connected) => {
+    mutablePhysics.gamepadConnected = connected;
+    set({ gamepadConnected: connected });
+  },
 }));

@@ -107,6 +107,9 @@ export const ArcadeController: React.FC = () => {
     shiftDrift: false,
   });
 
+  const gamepadPrevButtons = useRef<Record<number, boolean>>({});
+  const lastRumbleTime = useRef(0);
+
   const springState = useRef({
     roll: 0,
     pitch: 0,
@@ -256,6 +259,9 @@ export const ArcadeController: React.FC = () => {
         mutablePhysics.timeOfDay =
           mutablePhysics.nightFactor > 0.5 ? TIME_PRESET_HOURS.GOLDEN : TIME_PRESET_HOURS.NIGHT;
       }
+      if (code === 'KeyV') {
+        useGameStore.getState().toggleCameraMode();
+      }
       if (code === 'KeyR') {
         useGameStore.getState().respawnAt(useGameStore.getState().spawnTarget);
       }
@@ -282,6 +288,28 @@ export const ArcadeController: React.FC = () => {
     };
   }, [setMode, toggleBinoculars]);
 
+  const triggerHaptic = (
+    pad: Gamepad | null,
+    durationMs: number,
+    strong: number,
+    weak: number
+  ) => {
+    if (!pad || !pad.vibrationActuator || typeof pad.vibrationActuator.playEffect !== 'function') return;
+    const now = performance.now();
+    if (now - lastRumbleTime.current < 70) return;
+    lastRumbleTime.current = now;
+    try {
+      pad.vibrationActuator.playEffect('dual-rumble', {
+        startDelay: 0,
+        duration: durationMs,
+        strongMagnitude: Math.min(1, Math.max(0, strong)),
+        weakMagnitude: Math.min(1, Math.max(0, weak)),
+      }).catch(() => {});
+    } catch {
+      // Ignore vibration error
+    }
+  };
+
   useFrame((state, rawDelta) => {
     const dt = Math.min(rawDelta, 0.04);
     const p = mutablePhysics;
@@ -293,14 +321,144 @@ export const ArcadeController: React.FC = () => {
     if (sp.hopCooldown > 0) sp.hopCooldown -= dt;
     if (p.emoteTimer > 0) p.emoteTimer = Math.max(0, p.emoteTimer - dt);
 
-    const steerInput = (inp.left ? 1 : 0) - (inp.right ? 1 : 0);
-    const moveInput = (inp.forward ? 1 : 0) - (inp.backward ? 1 : 0);
+    // --- GAMEPAD POLLING & DISCOVERY ---
+    const gamepads = typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : [];
+    let pad: Gamepad | null = null;
+    for (let i = 0; i < gamepads.length; i++) {
+      const g = gamepads[i];
+      if (g && g.connected) {
+        pad = g;
+        break;
+      }
+    }
+
+    const padConnected = !!pad;
+    if (p.gamepadConnected !== padConnected) {
+      p.gamepadConnected = padConnected;
+      p.gamepadName = pad ? (pad.id || 'Xbox Controller') : '';
+      useGameStore.getState().setGamepadConnected(padConnected);
+    }
+
+    let padSteer = 0;
+    let padMove = 0;
+    let padGas = 0;
+    let padBrake = 0;
+    let padHop = false;
+    let padDriftBtn = false;
+    let padBinoLookX = 0;
+    let padBinoLookY = 0;
+
+    if (pad) {
+      const deadzone = (val: number, thresh = 0.12) => {
+        if (Math.abs(val) < thresh) return 0;
+        return Math.sign(val) * ((Math.abs(val) - thresh) / (1 - thresh));
+      };
+
+      // Left Stick (X: left = -1, right = +1; Y: up = -1, down = +1)
+      padSteer = -deadzone(pad.axes[0] ?? 0, 0.12);
+      padMove = -deadzone(pad.axes[1] ?? 0, 0.12);
+
+      // Triggers (RT: 7, LT: 6)
+      padGas = pad.buttons[7] ? pad.buttons[7].value : 0;
+      padBrake = pad.buttons[6] ? pad.buttons[6].value : 0;
+
+      const isPressed = (btnIndex: number) => {
+        const b = pad!.buttons[btnIndex];
+        return !!(b && (b.pressed || b.value > 0.5));
+      };
+
+      const wasJustPressed = (btnIndex: number) => {
+        const cur = isPressed(btnIndex);
+        const prev = !!gamepadPrevButtons.current[btnIndex];
+        return cur && !prev;
+      };
+
+      // Button 0 (A): Hop / Dyno / Jump
+      padHop = isPressed(0);
+      // Button 1 (B): Drift / Powerslide
+      padDriftBtn = isPressed(1);
+
+      // Button 2 (X): Contextual action
+      if (wasJustPressed(2)) {
+        handleContextualAction();
+        triggerHaptic(pad, 70, 0.3, 0.3);
+      }
+
+      // Button 3 (Y) or Button 5 (RB): Emote / Bell
+      if (wasJustPressed(3) || wasJustPressed(5)) {
+        triggerPlayerEmote();
+        triggerHaptic(pad, 100, 0.4, 0.6);
+      }
+
+      // Button 4 (LB): Toggle Binoculars
+      if (wasJustPressed(4)) {
+        toggleBinoculars();
+        triggerHaptic(pad, 80, 0.3, 0.2);
+      }
+
+      // Button 8 (View / Back): Respawn
+      if (wasJustPressed(8)) {
+        useGameStore.getState().respawnAt(useGameStore.getState().spawnTarget);
+        triggerHaptic(pad, 90, 0.5, 0.3);
+      }
+
+      // Button 9 (Menu / Start): Toggle Day/Night
+      if (wasJustPressed(9)) {
+        p.timeOfDay = p.nightFactor > 0.5 ? TIME_PRESET_HOURS.GOLDEN : TIME_PRESET_HOURS.NIGHT;
+        triggerHaptic(pad, 80, 0.3, 0.4);
+      }
+
+      // Button 10 (L3) or Button 11 (R3): Toggle Camera Mode
+      if (wasJustPressed(10) || wasJustPressed(11)) {
+        useGameStore.getState().toggleCameraMode();
+        triggerHaptic(pad, 100, 0.3, 0.5);
+      }
+
+      // D-Pad buttons: 12 (Up: Longboard), 13 (Down: Canoe), 14 (Left: Walk), 15 (Right: Bike)
+      if (wasJustPressed(12)) {
+        setMode('LONGBOARD');
+        triggerHaptic(pad, 70, 0.2, 0.3);
+      } else if (wasJustPressed(13)) {
+        setMode('CANOE');
+        triggerHaptic(pad, 70, 0.2, 0.3);
+      } else if (wasJustPressed(14)) {
+        setMode('WALK');
+        triggerHaptic(pad, 70, 0.2, 0.3);
+      } else if (wasJustPressed(15)) {
+        setMode('BIKE');
+        triggerHaptic(pad, 70, 0.2, 0.3);
+      }
+
+      // Right Stick (axes[2], axes[3]) for Binoculars look
+      if (binocularsActive) {
+        padBinoLookX = deadzone(pad.axes[2] ?? 0, 0.12);
+        padBinoLookY = -deadzone(pad.axes[3] ?? 0, 0.12);
+      }
+
+      // Edge detection cache
+      for (let b = 0; b < pad.buttons.length; b++) {
+        gamepadPrevButtons.current[b] = isPressed(b);
+      }
+    }
+
+    const keySteer = (inp.left ? 1 : 0) - (inp.right ? 1 : 0);
+    const steerInput = Math.abs(padSteer) > 0.04 ? padSteer : keySteer;
+
+    const keyMove = (inp.forward ? 1 : 0) - (inp.backward ? 1 : 0);
+    const moveInput = Math.abs(padMove) > 0.08 ? padMove : keyMove;
+
+    const wantsHop = inp.driftOrHop || padHop;
+    const accelInput = Math.max(inp.forward ? 1.0 : 0.0, padGas, Math.max(0, padMove));
+    const brakeInput = Math.max(inp.backward ? 1.0 : 0.0, padBrake, Math.max(0, -padMove));
+    const isBraking = brakeInput > 0.15;
 
     // --- BINOCULARS LOOK MODE ---
     if (binocularsActive) {
-      p.binocularsYaw += steerInput * 1.45 * dt;
+      const yawInput = Math.abs(padBinoLookX) > 0.05 ? -padBinoLookX : steerInput;
+      const pitchInput = Math.abs(padBinoLookY) > 0.05 ? padBinoLookY : moveInput;
+      p.binocularsYaw += yawInput * 1.55 * dt;
       p.binocularsPitch = THREE.MathUtils.clamp(
-        p.binocularsPitch + moveInput * 1.1 * dt,
+        p.binocularsPitch + pitchInput * 1.25 * dt,
         -0.65,
         0.75
       );
@@ -361,10 +519,11 @@ export const ArcadeController: React.FC = () => {
       p.isGrounded = true;
       p.isDrifting = false;
 
-      if (inp.driftOrHop && sp.hopCooldown <= 0) {
+      if (wantsHop && sp.hopCooldown <= 0) {
         p.specialState = 'NONE';
         p.velocity.y = 4.5;
         sp.hopCooldown = 0.4;
+        triggerHaptic(pad, 70, 0.3, 0.2);
       }
     }
     // --- SPECIAL STATE 1: ZIPLINE GLIDING (Step 3.3) ---
@@ -373,10 +532,11 @@ export const ArcadeController: React.FC = () => {
       const totalLength = ZIPLINE_START.distanceTo(ZIPLINE_END);
       p.ziplineT += (p.speed / totalLength) * dt;
 
-      if (p.ziplineT >= 0.99 || (inp.driftOrHop && sp.hopCooldown <= 0)) {
+      if (p.ziplineT >= 0.99 || (wantsHop && sp.hopCooldown <= 0)) {
         p.specialState = 'NONE';
         p.velocity.set(_forward.x * p.speed * 0.6, 2.0, _forward.z * p.speed * 0.6);
         sp.hopCooldown = 0.4;
+        triggerHaptic(pad, 90, 0.4, 0.3);
       } else {
         getZiplinePoint(p.ziplineT, _zipPos);
         getZiplinePoint(Math.min(1, p.ziplineT + 0.02), _zipNext);
@@ -398,11 +558,12 @@ export const ArcadeController: React.FC = () => {
       const vx = -steerInput * climbSpeed * 0.85;
       let vy = moveInput * climbSpeed;
 
-      if (inp.driftOrHop && sp.hopCooldown <= 0 && p.stamina > 0.18) {
+      if (wantsHop && sp.hopCooldown <= 0 && p.stamina > 0.18) {
         vy = 11.5;
         p.stamina = Math.max(0, p.stamina - 0.18);
         sp.hopCooldown = 0.45;
         soundscape.triggerHopSound();
+        triggerHaptic(pad, 100, 0.5, 0.4);
       }
 
       p.position.x = THREE.MathUtils.clamp(
@@ -424,6 +585,7 @@ export const ArcadeController: React.FC = () => {
         p.stamina = 1.0;
         p.yaw = 0;
         soundscape.triggerDiscoveryChime();
+        triggerHaptic(pad, 120, 0.3, 0.6);
       } else if (p.position.y <= CLIMB_ZONE.minY + 0.2 || p.stamina <= 0) {
         p.specialState = 'NONE';
         p.velocity.set(0, 0, 3);
@@ -458,7 +620,7 @@ export const ArcadeController: React.FC = () => {
       );
       if (
         mode === 'WALK' &&
-        inp.forward &&
+        (inp.forward || padMove > 0.2) &&
         distToClimb < 2.2 &&
         p.position.y < TOWER_BASE_Y + TOWER_DECK_HEIGHT - 2 &&
         p.stamina > 0.3
@@ -470,12 +632,14 @@ export const ArcadeController: React.FC = () => {
       p.isGrounded = p.position.y <= effectiveGroundY + groundedThreshold && p.velocity.y <= 1.5;
 
       // 2. Steering & Heading Vectors (Snappy turn response at all speeds!)
-      const isBraking = inp.backward;
       const wantsDrift =
-        (mode === 'LONGBOARD' && (inp.driftOrHop || inp.shiftDrift)) ||
-        (mode === 'BIKE' && (inp.shiftDrift || inp.backward) && Math.abs(steerInput) > 0.1);
+        (mode === 'LONGBOARD' && (wantsHop || inp.shiftDrift || padDriftBtn || padBrake > 0.2)) ||
+        (mode === 'BIKE' && (inp.shiftDrift || padDriftBtn || isBraking) && Math.abs(steerInput) > 0.1);
 
       p.isDrifting = p.isGrounded && wantsDrift && p.speed > 5.5;
+      if (p.isDrifting) {
+        triggerHaptic(pad, 65, 0.12, 0.32);
+      }
 
       const speedFactor =
         mode === 'WALK' || mode === 'CANOE'
@@ -506,32 +670,34 @@ export const ArcadeController: React.FC = () => {
 
       // 5. Mode-Specific Propulsion
       if (mode === 'LONGBOARD') {
-        if (inp.forward && forwardVel < preset.maxSpeed) {
-          forwardVel += preset.accelForce * dt;
+        if (accelInput > 0 && forwardVel < preset.maxSpeed) {
+          forwardVel += preset.accelForce * accelInput * dt;
         }
         const steerDelta = Math.abs(steerInput - sp.prevSteer);
         p.isPumping = p.isGrounded && !p.isDrifting && Math.abs(steerInput) > 0 && forwardVel > 3.0;
         if (steerDelta > 0.5 && p.isGrounded && forwardVel > 2.5 && forwardVel < preset.maxSpeed) {
           forwardVel += 1.15;
         }
-        if (inp.driftOrHop && p.isGrounded && p.speed <= 6.5 && sp.hopCooldown <= 0) {
+        if (wantsHop && p.isGrounded && p.speed <= 6.5 && sp.hopCooldown <= 0) {
           p.velocity.y = preset.hopImpulse;
           p.isGrounded = false;
           sp.hopCooldown = 0.45;
           soundscape.triggerHopSound();
+          triggerHaptic(pad, 80, 0.4, 0.3);
         }
       } else if (mode === 'BIKE') {
         p.isPumping = false;
-        if (inp.forward && forwardVel < preset.maxSpeed) {
-          forwardVel += preset.accelForce * dt;
+        if (accelInput > 0 && forwardVel < preset.maxSpeed) {
+          forwardVel += preset.accelForce * accelInput * dt;
         }
         sp.pedalPhase += Math.max(0, forwardVel) * dt * 0.85;
-        if (inp.driftOrHop && p.isGrounded && sp.hopCooldown <= 0) {
+        if (wantsHop && p.isGrounded && sp.hopCooldown <= 0) {
           p.velocity.y = preset.hopImpulse;
           p.isGrounded = false;
           sp.hopCooldown = 0.45;
           sp.bounceVel = 6.0;
           soundscape.triggerHopSound();
+          triggerHaptic(pad, 90, 0.55, 0.35);
         }
         if (p.isGrounded && p.surface === 'DIRT' && p.speed > 4) {
           sp.bounceVel += Math.sin(p.position.z * 1.8) * 0.35;
@@ -539,14 +705,14 @@ export const ArcadeController: React.FC = () => {
       } else if (mode === 'CANOE') {
         p.isPumping = false;
         const waterEfficiency = isOnWater ? 1.0 : 0.22;
-        if (inp.forward) {
-          p.paddlePhase += dt * 5.2;
+        if (accelInput > 0) {
+          p.paddlePhase += dt * (4.2 + 2.0 * accelInput);
           const strokePulse = 0.75 + 0.45 * Math.max(0, Math.sin(p.paddlePhase));
           if (forwardVel < preset.maxSpeed * waterEfficiency) {
-            forwardVel += preset.accelForce * strokePulse * waterEfficiency * dt;
+            forwardVel += preset.accelForce * strokePulse * waterEfficiency * accelInput * dt;
           }
           if (Math.sin(p.paddlePhase) < -0.8) {
-            p.paddleSide = steerInput !== 0 ? steerInput : -p.paddleSide;
+            p.paddleSide = steerInput !== 0 ? Math.sign(steerInput) : -p.paddleSide;
           }
         } else {
           p.paddlePhase = THREE.MathUtils.damp(p.paddlePhase, 0, 4, dt);
@@ -560,20 +726,21 @@ export const ArcadeController: React.FC = () => {
       } else {
         // WALK mode
         p.isPumping = false;
-        if (inp.forward) {
-          forwardVel = THREE.MathUtils.damp(forwardVel, preset.maxSpeed, 8, dt);
-          sp.walkBob += dt * 12;
-        } else if (inp.backward) {
-          forwardVel = THREE.MathUtils.damp(forwardVel, -preset.maxSpeed * 0.6, 8, dt);
-          sp.walkBob += dt * 8;
+        if (moveInput > 0.05) {
+          forwardVel = THREE.MathUtils.damp(forwardVel, preset.maxSpeed * moveInput, 8, dt);
+          sp.walkBob += dt * 12 * Math.min(1, moveInput);
+        } else if (moveInput < -0.05) {
+          forwardVel = THREE.MathUtils.damp(forwardVel, -preset.maxSpeed * 0.6 * Math.abs(moveInput), 8, dt);
+          sp.walkBob += dt * 8 * Math.min(1, Math.abs(moveInput));
         } else {
           forwardVel = THREE.MathUtils.damp(forwardVel, 0, 10, dt);
         }
-        if (inp.driftOrHop && p.isGrounded && sp.hopCooldown <= 0) {
+        if (wantsHop && p.isGrounded && sp.hopCooldown <= 0) {
           p.velocity.y = preset.hopImpulse;
           p.isGrounded = false;
           sp.hopCooldown = 0.45;
           soundscape.triggerHopSound();
+          triggerHaptic(pad, 60, 0.3, 0.2);
         }
       }
 
@@ -600,7 +767,7 @@ export const ArcadeController: React.FC = () => {
       if (isBraking && mode !== 'WALK') {
         if (forwardVel > 0.5) {
           const brakeDecel = p.isDrifting ? 11.0 : 19.0;
-          forwardVel = Math.max(0, forwardVel - brakeDecel * dt);
+          forwardVel = Math.max(0, forwardVel - brakeDecel * Math.max(0.65, brakeInput) * dt);
         } else {
           forwardVel = THREE.MathUtils.damp(forwardVel, -3.5, 4, dt);
         }
@@ -645,6 +812,7 @@ export const ArcadeController: React.FC = () => {
       if (p.position.y <= targetFloorY) {
         if (!p.isGrounded && p.velocity.y < -3.0) {
           sp.bounceVel = p.velocity.y * 0.35;
+          triggerHaptic(pad, 130, Math.min(1, Math.abs(p.velocity.y) / 11), 0.5);
         }
         p.position.y = targetFloorY;
         p.velocity.y = 0;
