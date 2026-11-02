@@ -58,18 +58,28 @@ function injectWindShader(shader: THREE.WebGLProgramParametersWithUniforms, sway
 /**
  * Generates a smooth, terrain-hugging extruded Ribbon BufferGeometry along a 3D spline.
  */
+/**
+ * Builds a continuous, terrain-conforming smooth spline ribbon with integrated
+ * cambered shoulders that tuck cleanly into the ground (zero jagged grid triangles).
+ */
 function createSplineRibbonGeometry(
   curve: THREE.CatmullRomCurve3,
   segments: number,
   halfWidth: number,
-  yOffset: number
+  yOffset: number,
+  coreColorHex: string,
+  shoulderColorHex: string
 ): THREE.BufferGeometry {
-  const crossPts = 5;
+  const crossPts = 9;
   const positions = new Float32Array((segments + 1) * crossPts * 3);
+  const colors = new Float32Array((segments + 1) * crossPts * 3);
   const indices: number[] = [];
 
   const pt = new THREE.Vector3();
   const tangent = new THREE.Vector3();
+  const cCore = new THREE.Color(coreColorHex);
+  const cShoulder = new THREE.Color(shoulderColorHex);
+  const tmpCol = new THREE.Color();
 
   for (let i = 0; i <= segments; i++) {
     const t = i / segments;
@@ -83,15 +93,34 @@ function createSplineRibbonGeometry(
 
     for (let c = 0; c < crossPts; c++) {
       const u = (c / (crossPts - 1)) * 2 - 1; // -1 to +1
+      const absU = Math.abs(u);
       const wx = pt.x + nx * halfWidth * u;
       const wz = pt.z + nz * halfWidth * u;
-      const crown = (1 - u * u) * 0.04;
-      const wy = getTerrainHeightOnly(wx, wz) + yOffset + crown;
+
+      // Smoothly arched road/trail bed that tucks edges (-0.09m) into the terrain
+      // so the underlying terrain never pokes through or shows sawtooth borders
+      let heightProfile = yOffset;
+      if (absU <= 0.72) {
+        const normU = absU / 0.72;
+        heightProfile = yOffset + (1 - normU * normU) * 0.06;
+        tmpCol.copy(cCore);
+      } else {
+        const edgeT = (absU - 0.72) / 0.28; // 0 to 1 at outer lip
+        const smoothEdge = edgeT * edgeT * (3 - 2 * edgeT);
+        heightProfile = THREE.MathUtils.lerp(yOffset, -0.09, smoothEdge);
+        tmpCol.copy(cCore).lerp(cShoulder, smoothEdge);
+      }
+
+      const wy = getTerrainHeightOnly(wx, wz) + heightProfile;
 
       const vIdx = (i * crossPts + c) * 3;
       positions[vIdx] = wx;
       positions[vIdx + 1] = wy;
       positions[vIdx + 2] = wz;
+
+      colors[vIdx] = tmpCol.r;
+      colors[vIdx + 1] = tmpCol.g;
+      colors[vIdx + 2] = tmpCol.b;
     }
 
     if (i < segments) {
@@ -108,6 +137,7 @@ function createSplineRibbonGeometry(
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geo.setIndex(indices);
   geo.computeVertexNormals();
   return geo;
@@ -171,7 +201,7 @@ export const TerrainChunk: React.FC = () => {
   const campLightRef = useRef<THREE.PointLight>(null);
   const fireEmberMatRef = useRef<THREE.MeshStandardMaterial>(null);
 
-  // 1. Build flat-shaded, vertex-colored 1,000m terrain geometry
+  // 1. Build smooth indexed, vertex-colored 1,000m terrain geometry (zero jagged triangle facets)
   const terrainGeometry = useMemo(() => {
     const baseGeo = new THREE.PlaneGeometry(
       TERRAIN_WIDTH,
@@ -191,67 +221,70 @@ export const TerrainChunk: React.FC = () => {
       posAttr.setY(i, heightGrid[gridIdx]);
     }
 
-    const nonIndexed = baseGeo.toNonIndexed();
-    nonIndexed.computeVertexNormals();
+    // Compute smooth shared vertex normals so the headlamp & sunlight glide over hills without triangle facets!
+    baseGeo.computeVertexNormals();
 
-    const niPos = nonIndexed.attributes.position;
-    const niNorm = nonIndexed.attributes.normal;
-    const colors = new Float32Array(niPos.count * 3);
+    const normAttr = baseGeo.attributes.normal;
+    const colors = new Float32Array(posAttr.count * 3);
     const tmpColor = new THREE.Color();
 
-    for (let i = 0; i < niPos.count; i += 3) {
-      const cx = (niPos.getX(i) + niPos.getX(i + 1) + niPos.getX(i + 2)) / 3;
-      const cy = (niPos.getY(i) + niPos.getY(i + 1) + niPos.getY(i + 2)) / 3;
-      const cz = (niPos.getZ(i) + niPos.getZ(i + 1) + niPos.getZ(i + 2)) / 3;
-      const ny = niNorm.getY(i);
+    for (let i = 0; i < posAttr.count; i++) {
+      const cx = posAttr.getX(i);
+      const cy = posAttr.getY(i);
+      const cz = posAttr.getZ(i);
+      const ny = normAttr.getY(i);
 
-      const gx = THREE.MathUtils.clamp(
-        Math.round((cx / TERRAIN_WIDTH + 0.5) * GRID_SEGMENTS_X),
-        0,
-        GRID_SEGMENTS_X
-      );
-      const gz = THREE.MathUtils.clamp(
-        Math.round((cz / TERRAIN_LENGTH + 0.5) * GRID_SEGMENTS_Z),
-        0,
-        GRID_SEGMENTS_Z
-      );
-      const sCode = surfaceGrid[gz * cols + gx];
-      const jitter = simplex2D(cx * 0.08, cz * 0.08) * 0.035;
+      const ix = i % cols;
+      const iz = Math.floor(i / cols);
+      const sCode = surfaceGrid[iz * cols + ix];
+      const jitter = simplex2D(cx * 0.05, cz * 0.05) * 0.025;
+
+      // Base meadow grass color with smooth altitude gradient
+      const altBlend = THREE.MathUtils.clamp((cy - 25) / 75, 0, 1);
+      tmpColor.copy(PALETTE.GRASS_MID).lerp(PALETTE.GRASS_WARM, altBlend);
 
       if (cy < WATER_LEVEL - 0.15) {
-        tmpColor.copy(PALETTE.LAKE_BED).offsetHSL(0, 0, jitter * 0.5);
-      } else if (sCode === 4 || (cy < WATER_LEVEL + 1.5 && cz > 210)) {
-        tmpColor.copy(PALETTE.SAND).offsetHSL(0, 0, jitter);
-      } else if (sCode === 1) {
-        tmpColor.copy(PALETTE.SHOULDER_GRAVEL).offsetHSL(0, 0, jitter * 0.5);
-      } else if (sCode === 2) {
-        tmpColor.copy(PALETTE.SHOULDER_MOSS).offsetHSL(0, 0, jitter * 0.5);
-      } else if (ny < 0.76 || sCode === 3) {
-        tmpColor.copy(ny < 0.65 ? PALETTE.ROCK_DARK : PALETTE.ROCK_LIGHT).offsetHSL(0, 0, jitter);
-      } else {
-        if (cy > 68) tmpColor.copy(PALETTE.GRASS_WARM);
-        else if (jitter > 0.01) tmpColor.copy(PALETTE.GRASS_HIGH);
-        else tmpColor.copy(PALETTE.GRASS_MID);
-        tmpColor.offsetHSL(0, 0, jitter);
+        const depthBlend = THREE.MathUtils.clamp((WATER_LEVEL - 0.15 - cy) / 1.8, 0, 1);
+        tmpColor.lerp(PALETTE.LAKE_BED, depthBlend);
+      } else if (sCode === 4 || (cy < WATER_LEVEL + 1.8 && cz > 205)) {
+        const sandBlend = THREE.MathUtils.clamp(1.0 - (cy - WATER_LEVEL) / 1.8, 0, 1);
+        tmpColor.lerp(PALETTE.SAND, Math.max(sCode === 4 ? 0.75 : 0, sandBlend));
+      } else if (ny < 0.82 || sCode === 3) {
+        const rockBlend = THREE.MathUtils.clamp((0.82 - ny) / 0.22, 0, 1);
+        const rockCol = ny < 0.65 ? PALETTE.ROCK_DARK : PALETTE.ROCK_LIGHT;
+        tmpColor.lerp(rockCol, Math.max(sCode === 3 ? 0.85 : 0, rockBlend));
       }
 
-      for (let v = 0; v < 3; v++) {
-        const idx = (i + v) * 3;
-        colors[idx] = tmpColor.r;
-        colors[idx + 1] = tmpColor.g;
-        colors[idx + 2] = tmpColor.b;
-      }
+      tmpColor.offsetHSL(0, 0, jitter);
+
+      colors[i * 3] = tmpColor.r;
+      colors[i * 3 + 1] = tmpColor.g;
+      colors[i * 3 + 2] = tmpColor.b;
     }
 
-    nonIndexed.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    return nonIndexed;
+    baseGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    return baseGeo;
   }, []);
 
   // 2. Smooth Ribbon Geometries for 1,000m Road, Dashed Yellow Center Lines & Dirt Singletrack
   const { roadRibbonGeo, roadStripeGeo, dirtRibbonGeo } = useMemo(() => {
-    const roadRibbon = createSplineRibbonGeometry(asphaltCurve, 520, 4.4, 0.06);
-    const roadStripe = createDashedCenterLineGeometry(asphaltCurve, 155, 0.14, 0.12);
-    const dirtRibbon = createSplineRibbonGeometry(dirtCurve, 460, 2.5, 0.05);
+    const roadRibbon = createSplineRibbonGeometry(
+      asphaltCurve,
+      640,
+      5.2,
+      0.14,
+      '#24272c',
+      '#4e535c'
+    );
+    const roadStripe = createDashedCenterLineGeometry(asphaltCurve, 155, 0.14, 0.22);
+    const dirtRibbon = createSplineRibbonGeometry(
+      dirtCurve,
+      560,
+      3.1,
+      0.12,
+      '#8f5336',
+      '#586443'
+    );
     return {
       roadRibbonGeo: roadRibbon,
       roadStripeGeo: roadStripe,
@@ -486,22 +519,21 @@ export const TerrainChunk: React.FC = () => {
 
   return (
     <group>
-      {/* Main Low-Poly Vertex-Colored Terrain (Matte Clay Roughness) */}
-      <mesh geometry={terrainGeometry} receiveShadow castShadow>
+      {/* Main Smooth Vertex-Colored Terrain (Matte Clay Roughness, Smooth Normals) */}
+      <mesh geometry={terrainGeometry} receiveShadow>
         <meshStandardMaterial
           vertexColors
-          flatShading
-          roughness={0.9}
-          metalness={0.02}
+          roughness={0.92}
+          metalness={0.01}
         />
       </mesh>
 
-      {/* Dedicated Smooth Charcoal Asphalt Road Ribbon Mesh (+0.06m above terrain) */}
+      {/* Dedicated Smooth Charcoal Asphalt Road Ribbon Mesh with Cambered Gravel Shoulders */}
       <mesh geometry={roadRibbonGeo} receiveShadow>
         <meshStandardMaterial
-          color="#24272c"
-          roughness={0.85}
-          metalness={0.03}
+          vertexColors
+          roughness={0.86}
+          metalness={0.02}
           polygonOffset
           polygonOffsetFactor={-1}
         />
@@ -517,13 +549,12 @@ export const TerrainChunk: React.FC = () => {
         />
       </mesh>
 
-      {/* Dedicated Smooth Cedar Dirt Singletrack Ribbon Mesh (+0.05m above terrain) */}
+      {/* Dedicated Smooth Cedar Dirt Singletrack Ribbon Mesh with Cambered Moss Shoulders */}
       <mesh geometry={dirtRibbonGeo} receiveShadow>
         <meshStandardMaterial
-          color="#8f5336"
+          vertexColors
           roughness={0.92}
           metalness={0.01}
-          flatShading
           polygonOffset
           polygonOffsetFactor={-1}
         />

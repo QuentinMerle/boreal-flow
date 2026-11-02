@@ -5,8 +5,8 @@ import { SurfaceType } from '../state/gameStore';
 // Session 2 Upgrade: 1,000m Boreal Canyon Sandbox (400m x 1,000m)
 export const TERRAIN_WIDTH = 400; // X: -200 to +200
 export const TERRAIN_LENGTH = 1000; // Z: -500 to +500
-export const GRID_SEGMENTS_X = 180; // ~2.22m per cell
-export const GRID_SEGMENTS_Z = 400; // 2.50m per cell
+export const GRID_SEGMENTS_X = 220; // ~1.81m per cell (smooth indexed mesh)
+export const GRID_SEGMENTS_Z = 480; // ~2.08m per cell
 export const WATER_LEVEL = 0.0;
 
 // 1. Scenic Asphalt Road Spline (Sweeping S-curves & hairpins from Z=-460 summit to Z=+252 lake camp)
