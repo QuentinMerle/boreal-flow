@@ -861,31 +861,39 @@ export const ArcadeController: React.FC = () => {
         targetFloorY = TOWER_BASE_Y + TOWER_DECK_HEIGHT + 0.22;
       }
 
-      // Slope / Kicker Crest Launch Physics:
+      // Slope / Kicker Crest Launch Physics (on Dirt Singletrack kickers):
       // If climbing a jump kicker at speed and cresting the lip (vertical ground rate drops sharply), launch airborne!
       const currentClimbVel = (targetFloorY - sp.prevGroundY) / Math.max(0.001, dt);
-      if (
+      const isCrestingDirtKicker =
         wasGroundedBeforeStep &&
         !newOnWater &&
+        p.surface === 'DIRT' &&
         (mode === 'BIKE' || mode === 'LONGBOARD') &&
-        p.speed > 9.0 &&
-        sp.prevClimbVel > 2.2 &&
-        currentClimbVel < sp.prevClimbVel - 2.0
-      ) {
-        p.velocity.y = Math.min(11.5, Math.max(4.8, sp.prevClimbVel * 1.15));
+        p.speed > 9.5 &&
+        sp.prevClimbVel > 2.6 &&
+        currentClimbVel < sp.prevClimbVel - 2.4;
+
+      if (isCrestingDirtKicker) {
+        p.velocity.y = Math.min(11.0, Math.max(4.8, sp.prevClimbVel * 1.15));
         p.position.y = targetFloorY + 0.12;
         p.isGrounded = false;
-        sp.bounceVel = 5.0;
+        sp.bounceVel = 4.5;
         soundscape.triggerHopSound();
         triggerHaptic(pad, 100, 0.5, 0.4);
-      } else if (p.position.y <= targetFloorY) {
-        if (!p.isGrounded && p.velocity.y < -3.0) {
-          sp.bounceVel = p.velocity.y * 0.35;
-          triggerHaptic(pad, 130, Math.min(1, Math.abs(p.velocity.y) / 11), 0.5);
+      } else if (
+        p.position.y <= targetFloorY ||
+        (wasGroundedBeforeStep && p.velocity.y <= 0.05 && p.position.y - targetFloorY < 0.65)
+      ) {
+        // Stick smoothly to downhill slopes without micro-bouncing into the air!
+        if (!wasGroundedBeforeStep && p.velocity.y < -4.5) {
+          sp.bounceVel = p.velocity.y * 0.28;
+          triggerHaptic(pad, 120, Math.min(1, Math.abs(p.velocity.y) / 12), 0.45);
         }
         p.position.y = targetFloorY;
         p.velocity.y = 0;
         p.isGrounded = true;
+      } else {
+        p.isGrounded = false;
       }
 
       sp.prevClimbVel = THREE.MathUtils.lerp(sp.prevClimbVel, currentClimbVel, 0.5);
