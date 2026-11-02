@@ -13,7 +13,7 @@ In Session 1, we established the **287 kB procedural proof-of-concept**: $O(1)$ 
 In Session 2, we elevate this technical foundation into an **authentic, tactile indie game experience**:
 1. **From Primitives to "Diorama Clay" Assets:** Transitioning select procedural meshes to low-poly `.glb` models generated via **Blender MCP**, optimized via `meshopt`, sharing a single 32x32 color palette atlas and styled with warm, clay-like matte materials (`roughness: 0.9`).
 2. **2.5D Isometric Icon Factory:** An automated pipeline (Blender MCP dimetric 2:1 camera $\to$ Eevee 48x48 sans-AA $\to$ ColorRamp 3 tones $\to$ 1px black outline $\to$ SVG `<feComponentTransfer>` palette swap).
-3. **Lonely Mountains Terrain Stamping:** Preserving the analytical $O(1)$ elevation while carving technical VTT singletrack shortcuts through pine forests, fallen tree hurdle jumps, and an organic river canyon beneath the $Y=0$ water plane.
+3. **Lonely Mountains Terrain Stamping & Map Scale Upgrade:** Doubling the slope to a **1,000m canyon descent** with analytical $O(1)$ elevation, while carving technical VTT singletrack shortcuts through pine forests, fallen tree hurdle jumps, and an organic river canyon beneath the $Y=0$ water plane.
 4. **Physical Game Feel & Xbox Controller:** Native Bluetooth Gamepad API integration with analog triggers, deadzones, and dual-rumble haptic feedback (`vibrationActuator`).
 5. **Zero-HUD Gameplay Loop ("Le But sans le Stress"):**
    - **Boreal Triathlon:** Summit to lake shore marked by a smoke plume above the canopy.
@@ -25,7 +25,18 @@ In Session 2, we elevate this technical foundation into an **authentic, tactile 
 
 ---
 
-## 2. Architecture Diagram (Session 2 Target)
+## 2. Antigravity Model Selection Strategy
+
+To maximize architectural depth and code reliability while preserving AI quotas:
+
+| Model | Recommended Tasks | Key Strengths |
+| :--- | :--- | :--- |
+| **Gemini 4 Argon (High)** | • Complex 3D math & physics ($O(1)$ heightfield, CatmullRom splines, orthonormal basis matrices)<br>• Custom GLSL vertex shaders (`onBeforeCompile`)<br>• Blender MCP Python procedural modeling scripts (`bmesh`)<br>• Large multi-file architectural refactorings & engine core changes | Deep reasoning, zero-shot mathematical accuracy, robust spatial logic. |
+| **Gemini 3.8 Flash (High)** | • Rapid gameplay feel tuning (friction constants, camera spring damping)<br>• Gamepad API event listeners & input deadzone mapping<br>• HUD overlay styling & DOM direct telemetry updates<br>• Git commits, branch management & roadmap documentation tracking<br>• Scoped bugfixes & quota conservation | Ultra-fast execution, minimal quota burn, high code precision on focused edits. |
+
+---
+
+## 3. Architecture Diagram (Session 2 Target)
 
 ```mermaid
 flowchart TD
@@ -41,9 +52,9 @@ flowchart TD
   end
 
   subgraph R3FScene["Three.js / R3F Engine (< 50 Draw Calls)"]
-    Terrain["Analytical O(1) Stamped Terrain"]
+    Terrain["Analytical O(1) Stamped Terrain (1,000m)"]
     Ribbons["Smooth Road & Trail Spline Ribbons"]
-    Instanced["InstancedMesh (Pines, Rocks, Fallen Logs)"]
+    Instanced["InstancedMesh (1,500 Pines, Rocks, Fallen Logs)"]
     DioramaRig["Segmented Toy Rig (Character & Vehicles)"]
     Lighting["Hemisphere + Golden Directional + N8AO"]
     Camera["Hybrid Camera (TPS Damp -> FPS Action / V Cockpit)"]
@@ -72,7 +83,7 @@ flowchart TD
 
 ---
 
-## 3. Detailed Work Packages
+## 4. Detailed Work Packages
 
 ### WP 1 — 2.5D Isometric Icon Factory ("Usine à Icônes++")
 - [ ] **Blender MCP Render Studio:**
@@ -108,12 +119,18 @@ flowchart TD
     - Low-angle Golden Hour directional sunlight with soft shadow bias.
     - `<N8AO aoSamples={6} halfRes />` from `@react-three/postprocessing` for contact shadows beneath wheels, boots, and trees.
 
-### WP 3 — Terrain Stamping 2D & Technical Shortcuts
-- [ ] **Analytical $O(1)$ Heightfield Evolution:**
-  - Main Asphalt Road: Width $7\text{m}$ ($d < 3.5\text{m}$), automatically clears vegetation, extrudes smooth dark ribbon (`#222428`) with dashed yellow centerline and occasional fallen log obstacles.
-  - VTT Singletracks: Narrow corridors ($d < 1.5\text{m}$) cutting through tree groves between road hairpins, painted ochre dirt, preserving Simplex roller undulations with natural jump kickers at exits.
-  - Canoe River Canyon: Sub-$Y=0$ winding canyon channel flowing into the lake with an active flow vector driving canoe glide.
-  - Surface friction lookup: `getSurfaceType(x, z)` enforcing optimal performance per vehicle (Longboard excels on asphalt, Bike thrives on singletracks).
+### WP 3 — Terrain Stamping 2D & Map Scale Upgrade (1,000m Canyon Corridor)
+- [ ] **Map Scaling Architecture (Zero-Performance-Cost Upgrade):**
+  - **Dimensions:** Width $400\text{m}$ (canyon framing), Length $1,000\text{m}$ ($Z = -500$ to $+500$), Summit elevation $\approx 120\text{m}$ descending to lake at $0\text{m}$.
+  - **Grid Resolution:** $2.5\text{m}$ cell pitch ($\approx 130\text{k}$ low-poly triangles in a single non-indexed BufferGeometry).
+  - **Vegetation Population:** Scaled to 1,500 instanced pines + 3,500 grass tufts (still rendered in a single draw call).
+  - **Shadow Cost:** Exactly zero additional GPU load because the directional shadow camera follows the player in a fixed $150\text{m}$ frustum.
+  - **Run Length:** Upgrades run time from 40s to a satisfying **2 to 3-minute continuous flow state descent**.
+- [ ] **Spline Stamping & Shortcuts:**
+  - **Main Asphalt Road:** Width $7\text{m}$ ($d < 3.5\text{m}$), automatically clears vegetation, extrudes smooth dark ribbon (`#222428`) with dashed yellow centerline and occasional fallen log obstacles.
+  - **VTT Singletracks:** Narrow corridors ($d < 1.5\text{m}$) cutting through tree groves between road hairpins, painted ochre dirt, preserving Simplex roller undulations with natural jump kickers at exits.
+  - **Canoe River Canyon:** Sub-$Y=0$ winding canyon channel flowing into the lake with an active flow vector driving canoe glide.
+  - **Surface friction lookup:** `getSurfaceType(x, z)` enforcing optimal performance per vehicle.
 
 ### WP 4 — Analog Gamepad Feel & Hybrid Camera
 - [ ] **Bluetooth Gamepad Integration (`navigator.getGamepads`):**
@@ -161,7 +178,7 @@ flowchart TD
 
 ---
 
-## 4. Implementation Steps Order of Attack
+## 5. Implementation Steps Order of Attack
 
 ```mermaid
 sequenceDiagram
@@ -170,14 +187,14 @@ sequenceDiagram
   participant Git as Git Repo
   participant Core as Input & Camera (Gamepad + Hybrid)
   participant 3D as Blender MCP & Diorama Assets
-  participant World as Stamped Terrain & Shortcuts
+  participant World as 1,000m Stamped Terrain & Shortcuts
   participant Game as Ghost & Triathlon Loop
   participant AI as Local Wasm Worker
 
   Dev->>Git: Branch feature/session-2-diorama-gameplay
   Dev->>Core: 1. Gamepad API (Analog triggers, deadzone, haptics) + Hybrid TPS/FPS Cam
-  Dev->>3D: 2. Blender MCP Diorama Pack (.glb models + Palette Atlas + N8AO)
-  Dev->>World: 3. Stamped Terrain (Singletracks, fallen logs, canyon river)
+  Dev->>World: 2. Upgrade Map to 1,000m Canyon + Stamped Shortcuts & Logs
+  Dev->>3D: 3. Blender MCP Diorama Pack (.glb models + Palette Atlas + N8AO)
   Dev->>Game: 4. Triathlon Finish Smoke & Scarf Ghost (Float32Array)
   Dev->>AI: 5. Radio Worker (Transformers.js Whisper-tiny on CPU)
 ```
