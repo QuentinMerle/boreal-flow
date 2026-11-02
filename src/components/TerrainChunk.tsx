@@ -85,8 +85,10 @@ function createSplineRibbonGeometry(
     const t = i / segments;
     curve.getPoint(t, pt);
     curve.getTangent(t, tangent);
-    const rightX = -tangent.z;
-    const rightZ = tangent.x;
+    // In right-handed coords (+X East, +Y Up, +Z South), for (d - a) x (b - a) to point +Y Up:
+    // tangent is (+Z), so lateral vector (+X) must be (+tangent.z, -tangent.x)
+    const rightX = tangent.z;
+    const rightZ = -tangent.x;
     const len = Math.hypot(rightX, rightZ) || 1;
     const nx = rightX / len;
     const nz = rightZ / len;
@@ -168,8 +170,8 @@ function createDashedCenterLineGeometry(
     curve.getPoint(t1, pt1);
     curve.getTangent((t0 + t1) * 0.5, tangent);
 
-    const rightX = -tangent.z;
-    const rightZ = tangent.x;
+    const rightX = tangent.z;
+    const rightZ = -tangent.x;
     const len = Math.hypot(rightX, rightZ) || 1;
     const nx = (rightX / len) * halfWidth;
     const nz = (rightZ / len) * halfWidth;
