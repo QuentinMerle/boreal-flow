@@ -133,17 +133,20 @@ flowchart TD
   - **Surface friction lookup:** `getSurfaceType(x, z)` enforcing optimal performance per vehicle.
 
 ### WP 4 — Analog Gamepad Feel & Hybrid Camera
-- [ ] **Bluetooth Gamepad Integration (`navigator.getGamepads`):**
+- [x] **Bluetooth Gamepad Integration (`navigator.getGamepads`):**
   - Analog steering with deadzone (`0.12`).
   - Analog triggers: RT for progressive acceleration / pedaling cadence, LT for progressive braking and powerslide initiate.
   - Button A for bunny-hops, ollies, and bouldering dynos.
+  - Full button map: X (Action), Y/RB (Bell & Wave Emote), LB (Binoculars), Back (Respawn), Start (Day/Night), R3/L3 (Cockpit mode toggle), D-Pad (Mode select).
   - Haptic feedback via `gamepad.vibrationActuator`:
-    - Continuous granular micro-rumble on dirt/gravel surfaces.
+    - Continuous granular micro-rumble on dirt/gravel surfaces & powerslides.
     - Sharp impulse on landing squash or obstacle collisions.
-- [ ] **Hybrid Camera Controller:**
+    - Double pulse on bell chime and actions.
+- [x] **Hybrid Camera Controller:**
   - Dynamic 3rd person follow camera (TPS) with damped springs during motion.
-  - Smooth lerp to 1st person eye-level camera (FPS) when stopped and activating binoculars, radio, or notebook.
-  - Cockpit / Handlebars camera (Toggle `V`) with locked roll horizon.
+  - Smooth lerp to stationary contemplation camera when stopped (`speed < 0.8` for $> 1.2\text{s}$) with lower height and upward gaze towards forest canopy.
+  - First-person / Handlebars Cockpit camera (Toggle `V` or Gamepad `R3/L3`) with locked roll horizon (zero roll nausea) and wide 56° downhill FOV.
+  - HUD integration: Gamepad connection badge (`🎮 GAMEPAD READY`), View toggle button (`🎥 View (V)`), and updated controls guide.
 
 ### WP 5 — Zero-HUD Gameplay Loop ("Le But sans le Stress")
 - [ ] **The Boreal Triathlon:**
