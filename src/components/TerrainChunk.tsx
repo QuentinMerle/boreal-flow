@@ -1,0 +1,700 @@
+import React, { useMemo, useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
+import * as THREE from 'three';
+import {
+  TERRAIN_WIDTH,
+  TERRAIN_LENGTH,
+  GRID_SEGMENTS_X,
+  GRID_SEGMENTS_Z,
+  WATER_LEVEL,
+  heightGrid,
+  surfaceGrid,
+  asphaltCurve,
+  dirtCurve,
+  getTerrainHeightOnly,
+} from '../world/terrainData';
+import { simplex2D } from '../math/noise';
+import { mutablePhysics } from '../state/gameStore';
+
+// Crisp "Firewatch / Lonely Mountains / A Short Hike" single-palette colors
+const PALETTE = {
+  GRASS_HIGH: new THREE.Color('#4d7c5b'),
+  GRASS_MID: new THREE.Color('#3b694c'),
+  GRASS_WARM: new THREE.Color('#6b8e4e'),
+  SHOULDER_GRAVEL: new THREE.Color('#6c756b'),
+  SHOULDER_MOSS: new THREE.Color('#4b6b4c'),
+  ROCK_LIGHT: new THREE.Color('#7a8288'),
+  ROCK_DARK: new THREE.Color('#555d66'),
+  SAND: new THREE.Color('#d2b48c'),
+  LAKE_BED: new THREE.Color('#1c434d'),
+};
+
+// Shared uniform for GPU vertex shader wind sway (updated in useFrame, zero CPU overhead)
+const windUniforms = {
+  uTime: { value: 0 },
+};
+
+function injectWindShader(shader: THREE.WebGLProgramParametersWithUniforms, swayStrength: number) {
+  shader.uniforms.uTime = windUniforms.uTime;
+  shader.vertexShader =
+    `uniform float uTime;\n` +
+    shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `
+      #include <begin_vertex>
+      #ifdef USE_INSTANCING
+        vec4 worldInstancePos = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+        float heightMask = max(0.0, position.y + 0.5);
+        float gust = sin(uTime * 2.1 + worldInstancePos.x * 0.14 + worldInstancePos.z * 0.11)
+                   + 0.45 * cos(uTime * 3.6 + worldInstancePos.x * 0.27);
+        transformed.x += gust * heightMask * ${swayStrength.toFixed(4)};
+        transformed.z += gust * heightMask * ${(swayStrength * 0.6).toFixed(4)};
+      #endif
+      `
+    );
+}
+
+/**
+ * Generates a smooth, terrain-hugging extruded Ribbon BufferGeometry along a 3D spline,
+ * plus optional dashed center lines for the scenic asphalt road.
+ */
+function createSplineRibbonGeometry(
+  curve: THREE.CatmullRomCurve3,
+  segments: number,
+  halfWidth: number,
+  yOffset: number
+): THREE.BufferGeometry {
+  const crossPts = 5; // 5 vertices across width so the ribbon conforms tightly to terrain
+  const positions = new Float32Array((segments + 1) * crossPts * 3);
+  const indices: number[] = [];
+
+  const pt = new THREE.Vector3();
+  const tangent = new THREE.Vector3();
+
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    curve.getPoint(t, pt);
+    curve.getTangent(t, tangent);
+    const rightX = -tangent.z;
+    const rightZ = tangent.x;
+    const len = Math.hypot(rightX, rightZ) || 1;
+    const nx = rightX / len;
+    const nz = rightZ / len;
+
+    for (let c = 0; c < crossPts; c++) {
+      const u = (c / (crossPts - 1)) * 2 - 1; // -1 to +1
+      const wx = pt.x + nx * halfWidth * u;
+      const wz = pt.z + nz * halfWidth * u;
+      // Slight crown in the center of the ribbon, edges tucked slightly down into shoulder
+      const crown = (1 - u * u) * 0.04;
+      const wy = getTerrainHeightOnly(wx, wz) + yOffset + crown;
+
+      const vIdx = (i * crossPts + c) * 3;
+      positions[vIdx] = wx;
+      positions[vIdx + 1] = wy;
+      positions[vIdx + 2] = wz;
+    }
+
+    if (i < segments) {
+      for (let c = 0; c < crossPts - 1; c++) {
+        const a = i * crossPts + c;
+        const b = a + 1;
+        const d = (i + 1) * crossPts + c;
+        const e = d + 1;
+        indices.push(a, d, b);
+        indices.push(b, d, e);
+      }
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * Generates dashed yellow center-line quads along the road spline.
+ */
+function createDashedCenterLineGeometry(
+  curve: THREE.CatmullRomCurve3,
+  totalDashes: number,
+  halfWidth: number,
+  yOffset: number
+): THREE.BufferGeometry {
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const pt0 = new THREE.Vector3();
+  const pt1 = new THREE.Vector3();
+  const tangent = new THREE.Vector3();
+  let vCount = 0;
+
+  for (let i = 0; i < totalDashes; i++) {
+    const t0 = (i + 0.15) / totalDashes;
+    const t1 = (i + 0.62) / totalDashes;
+    if (t1 >= 0.97) continue;
+
+    curve.getPoint(t0, pt0);
+    curve.getPoint(t1, pt1);
+    curve.getTangent((t0 + t1) * 0.5, tangent);
+
+    const rightX = -tangent.z;
+    const rightZ = tangent.x;
+    const len = Math.hypot(rightX, rightZ) || 1;
+    const nx = (rightX / len) * halfWidth;
+    const nz = (rightZ / len) * halfWidth;
+
+    const y0 = getTerrainHeightOnly(pt0.x, pt0.z) + yOffset;
+    const y1 = getTerrainHeightOnly(pt1.x, pt1.z) + yOffset;
+
+    positions.push(
+      pt0.x - nx, y0, pt0.z - nz,
+      pt0.x + nx, y0, pt0.z + nz,
+      pt1.x - nx, y1, pt1.z - nz,
+      pt1.x + nx, y1, pt1.z + nz
+    );
+
+    indices.push(vCount, vCount + 2, vCount + 1);
+    indices.push(vCount + 1, vCount + 2, vCount + 3);
+    vCount += 4;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+export const TerrainChunk: React.FC = () => {
+  const tentFabricMatRef = useRef<THREE.MeshStandardMaterial>(null);
+  const campLightRef = useRef<THREE.PointLight>(null);
+  const fireEmberMatRef = useRef<THREE.MeshStandardMaterial>(null);
+
+  // 1. Build flat-shaded, vertex-colored terrain geometry (without jagged black road triangles!)
+  const terrainGeometry = useMemo(() => {
+    const baseGeo = new THREE.PlaneGeometry(
+      TERRAIN_WIDTH,
+      TERRAIN_LENGTH,
+      GRID_SEGMENTS_X,
+      GRID_SEGMENTS_Z
+    );
+    baseGeo.rotateX(-Math.PI / 2);
+
+    const posAttr = baseGeo.attributes.position;
+    const cols = GRID_SEGMENTS_X + 1;
+
+    for (let i = 0; i < posAttr.count; i++) {
+      const ix = i % cols;
+      const iz = Math.floor(i / cols);
+      const gridIdx = iz * cols + ix;
+      posAttr.setY(i, heightGrid[gridIdx]);
+    }
+
+    const nonIndexed = baseGeo.toNonIndexed();
+    nonIndexed.computeVertexNormals();
+
+    const niPos = nonIndexed.attributes.position;
+    const niNorm = nonIndexed.attributes.normal;
+    const colors = new Float32Array(niPos.count * 3);
+    const tmpColor = new THREE.Color();
+
+    for (let i = 0; i < niPos.count; i += 3) {
+      const cx = (niPos.getX(i) + niPos.getX(i + 1) + niPos.getX(i + 2)) / 3;
+      const cy = (niPos.getY(i) + niPos.getY(i + 1) + niPos.getY(i + 2)) / 3;
+      const cz = (niPos.getZ(i) + niPos.getZ(i + 1) + niPos.getZ(i + 2)) / 3;
+      const ny = niNorm.getY(i);
+
+      const gx = THREE.MathUtils.clamp(
+        Math.round(((cx / TERRAIN_WIDTH) + 0.5) * GRID_SEGMENTS_X),
+        0,
+        GRID_SEGMENTS_X
+      );
+      const gz = THREE.MathUtils.clamp(
+        Math.round(((cz / TERRAIN_LENGTH) + 0.5) * GRID_SEGMENTS_Z),
+        0,
+        GRID_SEGMENTS_Z
+      );
+      const sCode = surfaceGrid[gz * cols + gx];
+      const jitter = simplex2D(cx * 0.08, cz * 0.08) * 0.035;
+
+      if (cy < WATER_LEVEL - 0.15) {
+        tmpColor.copy(PALETTE.LAKE_BED).offsetHSL(0, 0, jitter * 0.5);
+      } else if (sCode === 4 || (cy < WATER_LEVEL + 1.5 && cz > 90)) {
+        tmpColor.copy(PALETTE.SAND).offsetHSL(0, 0, jitter);
+      } else if (sCode === 1) {
+        // Subtle gravel/grass shoulder underneath the smooth Asphalt Ribbon Mesh
+        tmpColor.copy(PALETTE.SHOULDER_GRAVEL).offsetHSL(0, 0, jitter * 0.5);
+      } else if (sCode === 2) {
+        // Mossy forest floor underneath the smooth Dirt Singletrack Ribbon Mesh
+        tmpColor.copy(PALETTE.SHOULDER_MOSS).offsetHSL(0, 0, jitter * 0.5);
+      } else if (ny < 0.76 || sCode === 3) {
+        tmpColor.copy(ny < 0.65 ? PALETTE.ROCK_DARK : PALETTE.ROCK_LIGHT).offsetHSL(0, 0, jitter);
+      } else {
+        if (cy > 38) tmpColor.copy(PALETTE.GRASS_WARM);
+        else if (jitter > 0.01) tmpColor.copy(PALETTE.GRASS_HIGH);
+        else tmpColor.copy(PALETTE.GRASS_MID);
+        tmpColor.offsetHSL(0, 0, jitter);
+      }
+
+      for (let v = 0; v < 3; v++) {
+        const idx = (i + v) * 3;
+        colors[idx] = tmpColor.r;
+        colors[idx + 1] = tmpColor.g;
+        colors[idx + 2] = tmpColor.b;
+      }
+    }
+
+    nonIndexed.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    return nonIndexed;
+  }, []);
+
+  // 2. Smooth Ribbon Geometries for Road, Dashed Yellow Center Lines & Dirt Trail
+  const { roadRibbonGeo, roadStripeGeo, dirtRibbonGeo } = useMemo(() => {
+    const roadRibbon = createSplineRibbonGeometry(asphaltCurve, 260, 4.3, 0.06);
+    const roadStripe = createDashedCenterLineGeometry(asphaltCurve, 78, 0.14, 0.12);
+    const dirtRibbon = createSplineRibbonGeometry(dirtCurve, 220, 2.45, 0.05);
+    return {
+      roadRibbonGeo: roadRibbon,
+      roadStripeGeo: roadStripe,
+      dirtRibbonGeo: dirtRibbon,
+    };
+  }, []);
+
+  // Instanced roadside wooden bollards & trail markers
+  const { postMatrices, postColors } = useMemo(() => {
+    const matrices: THREE.Matrix4[] = [];
+    const colors: THREE.Color[] = [];
+    const dummy = new THREE.Object3D();
+    const pt = new THREE.Vector3();
+    const tangent = new THREE.Vector3();
+
+    const roadSteps = 65;
+    for (let i = 2; i < roadSteps - 2; i++) {
+      const t = i / roadSteps;
+      asphaltCurve.getPoint(t, pt);
+      asphaltCurve.getTangent(t, tangent);
+      const rightX = -tangent.z;
+      const rightZ = tangent.x;
+
+      for (const side of [-1, 1]) {
+        const px = pt.x + rightX * side * 5.2;
+        const pz = pt.z + rightZ * side * 5.2;
+        const py = getTerrainHeightOnly(px, pz);
+        if (py > WATER_LEVEL + 0.5) {
+          dummy.position.set(px, py + 0.45, pz);
+          dummy.rotation.set(0, Math.atan2(tangent.x, tangent.z), 0);
+          dummy.scale.set(0.22, 0.9, 0.22);
+          dummy.updateMatrix();
+          matrices.push(dummy.matrix.clone());
+          colors.push(new THREE.Color(i % 2 === 0 ? '#eb5e46' : '#e8dcc4'));
+        }
+      }
+    }
+
+    const dirtSteps = 55;
+    for (let i = 2; i < dirtSteps - 2; i += 2) {
+      const t = i / dirtSteps;
+      dirtCurve.getPoint(t, pt);
+      dirtCurve.getTangent(t, tangent);
+      const rightX = -tangent.z;
+      const rightZ = tangent.x;
+
+      const side = i % 4 === 0 ? 1 : -1;
+      const px = pt.x + rightX * side * 3.1;
+      const pz = pt.z + rightZ * side * 3.1;
+      const py = getTerrainHeightOnly(px, pz);
+      if (py > WATER_LEVEL + 0.5) {
+        dummy.position.set(px, py + 0.35, pz);
+        dummy.rotation.set(0, Math.atan2(tangent.x, tangent.z), 0);
+        dummy.scale.set(0.18, 0.7, 0.18);
+        dummy.updateMatrix();
+        matrices.push(dummy.matrix.clone());
+        colors.push(new THREE.Color('#52b788'));
+      }
+    }
+
+    return { postMatrices: matrices, postColors: colors };
+  }, []);
+
+  // Step 2.1: Instanced Foliage (Pines, Mossy Rocks, and Lush Grass Tufts)
+  const { treeMatrices, rockMatrices, grassMatrices } = useMemo(() => {
+    const trees: THREE.Matrix4[] = [];
+    const rocks: THREE.Matrix4[] = [];
+    const grass: THREE.Matrix4[] = [];
+    const dummy = new THREE.Object3D();
+    const cols = GRID_SEGMENTS_X + 1;
+
+    for (let i = 0; i < 550; i++) {
+      const rx = ((Math.sin(i * 127.1) * 43758.5453) % 1 + 1) % 1;
+      const rz = ((Math.sin(i * 311.7) * 43758.5453) % 1 + 1) % 1;
+      const x = (rx - 0.5) * (TERRAIN_WIDTH - 20);
+      const z = (rz - 0.5) * (TERRAIN_LENGTH - 24);
+
+      if (Math.hypot(x - -11, z - 114) < 11) continue;
+      if (Math.hypot(x - 0, z - -226) < 14) continue;
+
+      const gx = Math.round(((x / TERRAIN_WIDTH) + 0.5) * GRID_SEGMENTS_X);
+      const gz = Math.round(((z / TERRAIN_LENGTH) + 0.5) * GRID_SEGMENTS_Z);
+      const sCode = surfaceGrid[gz * cols + gx];
+      const y = getTerrainHeightOnly(x, z);
+
+      if (sCode === 0 && y > WATER_LEVEL + 1.5 && y < 70) {
+        const scale = 0.8 + ((i * 17) % 12) * 0.11;
+        dummy.position.set(x, y, z);
+        dummy.rotation.set(0, (i * 1.3) % (Math.PI * 2), 0);
+        dummy.scale.set(scale, scale * (0.95 + ((i % 5) * 0.08)), scale);
+        dummy.updateMatrix();
+        trees.push(dummy.matrix.clone());
+      }
+    }
+
+    for (let i = 0; i < 280; i++) {
+      const rx = ((Math.sin(i * 517.3 + 9) * 43758.5453) % 1 + 1) % 1;
+      const rz = ((Math.sin(i * 811.1 + 3) * 43758.5453) % 1 + 1) % 1;
+      const x = (rx - 0.5) * (TERRAIN_WIDTH - 20);
+      const z = (rz - 0.5) * (TERRAIN_LENGTH - 24);
+      if (Math.hypot(x - -11, z - 114) < 9) continue;
+      if (Math.hypot(x - 0, z - -226) < 12) continue;
+
+      const gx = Math.round(((x / TERRAIN_WIDTH) + 0.5) * GRID_SEGMENTS_X);
+      const gz = Math.round(((z / TERRAIN_LENGTH) + 0.5) * GRID_SEGMENTS_Z);
+      const sCode = surfaceGrid[gz * cols + gx];
+      const y = getTerrainHeightOnly(x, z);
+
+      if ((sCode === 0 || sCode === 3 || sCode === 4) && y > WATER_LEVEL + 0.3) {
+        const sx = 0.55 + ((i * 13) % 9) * 0.16;
+        const sy = sx * (0.6 + ((i * 7) % 5) * 0.12);
+        dummy.position.set(x, y + sy * 0.25, z);
+        dummy.rotation.set((i * 0.4) % 1, (i * 1.9) % 6, (i * 0.3) % 1);
+        dummy.scale.set(sx, sy, sx * 0.9);
+        dummy.updateMatrix();
+        rocks.push(dummy.matrix.clone());
+      }
+    }
+
+    for (let i = 0; i < 1600; i++) {
+      const rx = ((Math.sin(i * 91.7 + 41) * 43758.5453) % 1 + 1) % 1;
+      const rz = ((Math.sin(i * 241.3 + 19) * 43758.5453) % 1 + 1) % 1;
+      const x = (rx - 0.5) * (TERRAIN_WIDTH - 24);
+      const z = (rz - 0.5) * (TERRAIN_LENGTH - 30);
+
+      const gx = Math.round(((x / TERRAIN_WIDTH) + 0.5) * GRID_SEGMENTS_X);
+      const gz = Math.round(((z / TERRAIN_LENGTH) + 0.5) * GRID_SEGMENTS_Z);
+      const sCode = surfaceGrid[gz * cols + gx];
+      const y = getTerrainHeightOnly(x, z);
+
+      if (sCode === 0 && y > WATER_LEVEL + 0.8 && y < 64) {
+        const s = 0.45 + ((i * 11) % 7) * 0.08;
+        dummy.position.set(x, y + s * 0.4, z);
+        dummy.rotation.set(0, (i * 2.1) % (Math.PI * 2), 0);
+        dummy.scale.set(s, s * 1.35, s);
+        dummy.updateMatrix();
+        grass.push(dummy.matrix.clone());
+      }
+    }
+
+    return { treeMatrices: trees, rockMatrices: rocks, grassMatrices: grass };
+  }, []);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    windUniforms.uTime.value = t;
+
+    const night = mutablePhysics.nightFactor;
+    if (tentFabricMatRef.current) {
+      tentFabricMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(0.05, 1.35, night);
+    }
+    if (fireEmberMatRef.current) {
+      const flicker = 0.85 + Math.sin(t * 14) * 0.15 + Math.cos(t * 23) * 0.1;
+      fireEmberMatRef.current.emissiveIntensity = (0.4 + night * 1.8) * flicker;
+    }
+    if (campLightRef.current) {
+      const flicker = 0.9 + Math.sin(t * 11) * 0.12;
+      campLightRef.current.intensity = THREE.MathUtils.lerp(0.2, 6.5, night) * flicker;
+    }
+  });
+
+  const dockY = WATER_LEVEL + 0.25;
+  const campX = -10;
+  const campZ = 115;
+  const campY = getTerrainHeightOnly(campX, campZ);
+
+  return (
+    <group>
+      {/* Main Low-Poly Vertex-Colored Terrain */}
+      <mesh geometry={terrainGeometry} receiveShadow castShadow>
+        <meshStandardMaterial
+          vertexColors
+          flatShading
+          roughness={0.88}
+          metalness={0.04}
+        />
+      </mesh>
+
+      {/* Dedicated Smooth Charcoal Asphalt Road Ribbon Mesh (+0.06m above terrain) */}
+      <mesh geometry={roadRibbonGeo} receiveShadow>
+        <meshStandardMaterial
+          color="#222428"
+          roughness={0.78}
+          metalness={0.06}
+          polygonOffset
+          polygonOffsetFactor={-1}
+        />
+      </mesh>
+
+      {/* Dashed Warm Yellow Center Lines on Asphalt Road */}
+      <mesh geometry={roadStripeGeo} receiveShadow>
+        <meshStandardMaterial
+          color="#f4b942"
+          roughness={0.5}
+          polygonOffset
+          polygonOffsetFactor={-2}
+        />
+      </mesh>
+
+      {/* Dedicated Smooth Cedar Dirt Singletrack Ribbon Mesh (+0.05m above terrain) */}
+      <mesh geometry={dirtRibbonGeo} receiveShadow>
+        <meshStandardMaterial
+          color="#8f5336"
+          roughness={0.92}
+          metalness={0.02}
+          flatShading
+          polygonOffset
+          polygonOffsetFactor={-1}
+        />
+      </mesh>
+
+      {/* Mirror Lake & River Plane */}
+      <mesh
+        position={[0, WATER_LEVEL, 145]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        receiveShadow
+      >
+        <planeGeometry args={[TERRAIN_WIDTH, 240, 32, 32]} />
+        <meshStandardMaterial
+          color="#2b7a8c"
+          roughness={0.18}
+          metalness={0.25}
+          transparent
+          opacity={0.86}
+          flatShading
+        />
+      </mesh>
+
+      {/* Wooden Lake Dock at the bottom of the slope */}
+      <group position={[2, dockY, 130]}>
+        <mesh castShadow receiveShadow position={[0, 0.15, 0]}>
+          <boxGeometry args={[4.2, 0.3, 18]} />
+          <meshStandardMaterial color="#8c6239" flatShading roughness={0.85} />
+        </mesh>
+        {[-7, -2, 3, 8].map((zOff, idx) => (
+          <React.Fragment key={idx}>
+            <mesh castShadow position={[-1.8, -0.6, zOff]}>
+              <cylinderGeometry args={[0.18, 0.18, 2.2, 6]} />
+              <meshStandardMaterial color="#5c3d22" flatShading />
+            </mesh>
+            <mesh castShadow position={[1.8, -0.6, zOff]}>
+              <cylinderGeometry args={[0.18, 0.18, 2.2, 6]} />
+              <meshStandardMaterial color="#5c3d22" flatShading />
+            </mesh>
+          </React.Fragment>
+        ))}
+      </group>
+
+      {/* Step 2.2: Lakeside Base Camp (Emissive Expedition Tent & Warm Campfire at Night) */}
+      <group position={[campX, campY, campZ]} rotation={[0, 0.45, 0]}>
+        <mesh castShadow receiveShadow position={[0, 1.15, 0]} rotation={[0, Math.PI / 4, 0]}>
+          <coneGeometry args={[2.3, 2.4, 4]} />
+          <meshStandardMaterial
+            ref={tentFabricMatRef}
+            color="#e76f51"
+            emissive="#ff9f1c"
+            emissiveIntensity={0.1}
+            flatShading
+            roughness={0.75}
+          />
+        </mesh>
+        <group position={[2.8, 0.12, 1.8]}>
+          <mesh castShadow position={[0, 0.18, 0]}>
+            <dodecahedronGeometry args={[0.48, 0]} />
+            <meshStandardMaterial
+              ref={fireEmberMatRef}
+              color="#ff5400"
+              emissive="#ff6d00"
+              emissiveIntensity={0.8}
+              flatShading
+            />
+          </mesh>
+          <mesh castShadow receiveShadow position={[1.3, 0.18, -0.4]} rotation={[Math.PI / 2, 0, 0.3]}>
+            <cylinderGeometry args={[0.22, 0.22, 2.1, 6]} />
+            <meshStandardMaterial color="#6c462b" flatShading />
+          </mesh>
+          <pointLight
+            ref={campLightRef}
+            position={[0, 1.4, 0]}
+            color="#ff9e44"
+            intensity={1.0}
+            distance={24}
+            decay={1.6}
+          />
+        </group>
+      </group>
+
+      {/* Instanced Roadside & Trailhead Markers */}
+      <InstancedPosts matrices={postMatrices} colors={postColors} />
+
+      {/* Step 2.1: Instanced Pines, Boulders & Grass with GPU Wind Sway */}
+      <InstancedPines matrices={treeMatrices} />
+      <InstancedRocks matrices={rockMatrices} />
+      <InstancedGrass matrices={grassMatrices} />
+    </group>
+  );
+};
+
+const InstancedPosts: React.FC<{ matrices: THREE.Matrix4[]; colors: THREE.Color[] }> = ({
+  matrices,
+  colors,
+}) => {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+
+  React.useLayoutEffect(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    for (let i = 0; i < matrices.length; i++) {
+      mesh.setMatrixAt(i, matrices[i]);
+      mesh.setColorAt(i, colors[i]);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }, [matrices, colors]);
+
+  return (
+    <instancedMesh ref={meshRef} args={[undefined, undefined, matrices.length]} castShadow receiveShadow>
+      <boxGeometry args={[1, 1, 1]} />
+      <meshStandardMaterial flatShading roughness={0.8} />
+    </instancedMesh>
+  );
+};
+
+const InstancedPines: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) => {
+  const trunkRef = useRef<THREE.InstancedMesh>(null);
+  const lowerTierRef = useRef<THREE.InstancedMesh>(null);
+  const upperTierRef = useRef<THREE.InstancedMesh>(null);
+
+  const pineMaterial = useMemo(() => {
+    const mat = new THREE.MeshStandardMaterial({
+      color: '#274c3c',
+      flatShading: true,
+      roughness: 0.85,
+    });
+    mat.onBeforeCompile = (shader) => injectWindShader(shader, 0.085);
+    return mat;
+  }, []);
+
+  const pineTopMaterial = useMemo(() => {
+    const mat = new THREE.MeshStandardMaterial({
+      color: '#34624e',
+      flatShading: true,
+      roughness: 0.82,
+    });
+    mat.onBeforeCompile = (shader) => injectWindShader(shader, 0.135);
+    return mat;
+  }, []);
+
+  React.useLayoutEffect(() => {
+    if (!trunkRef.current || !lowerTierRef.current || !upperTierRef.current) return;
+    const matLower = new THREE.Matrix4();
+    const matUpper = new THREE.Matrix4();
+    const offsetLower = new THREE.Matrix4().makeTranslation(0, 3.1, 0);
+    const offsetUpper = new THREE.Matrix4().makeTranslation(0, 5.2, 0);
+
+    for (let i = 0; i < matrices.length; i++) {
+      trunkRef.current.setMatrixAt(i, matrices[i]);
+      matLower.multiplyMatrices(matrices[i], offsetLower);
+      lowerTierRef.current.setMatrixAt(i, matLower);
+      matUpper.multiplyMatrices(matrices[i], offsetUpper);
+      upperTierRef.current.setMatrixAt(i, matUpper);
+    }
+    trunkRef.current.instanceMatrix.needsUpdate = true;
+    lowerTierRef.current.instanceMatrix.needsUpdate = true;
+    upperTierRef.current.instanceMatrix.needsUpdate = true;
+  }, [matrices]);
+
+  return (
+    <group>
+      <instancedMesh ref={trunkRef} args={[undefined, undefined, matrices.length]} castShadow>
+        <cylinderGeometry args={[0.2, 0.34, 2.2, 5]} />
+        <meshStandardMaterial color="#5c4028" flatShading roughness={0.9} />
+      </instancedMesh>
+      <instancedMesh
+        ref={lowerTierRef}
+        args={[undefined, pineMaterial, matrices.length]}
+        castShadow
+        receiveShadow
+      >
+        <coneGeometry args={[1.95, 4.2, 6]} />
+      </instancedMesh>
+      <instancedMesh
+        ref={upperTierRef}
+        args={[undefined, pineTopMaterial, matrices.length]}
+        castShadow
+        receiveShadow
+      >
+        <coneGeometry args={[1.45, 3.6, 6]} />
+      </instancedMesh>
+    </group>
+  );
+};
+
+const InstancedRocks: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) => {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+
+  React.useLayoutEffect(() => {
+    if (!meshRef.current) return;
+    const col = new THREE.Color();
+    for (let i = 0; i < matrices.length; i++) {
+      meshRef.current.setMatrixAt(i, matrices[i]);
+      col.set(i % 3 === 0 ? '#6c757d' : i % 2 === 0 ? '#5c6770' : '#7b858e');
+      meshRef.current.setColorAt(i, col);
+    }
+    meshRef.current.instanceMatrix.needsUpdate = true;
+    if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
+  }, [matrices]);
+
+  return (
+    <instancedMesh ref={meshRef} args={[undefined, undefined, matrices.length]} castShadow receiveShadow>
+      <dodecahedronGeometry args={[1, 0]} />
+      <meshStandardMaterial flatShading roughness={0.9} />
+    </instancedMesh>
+  );
+};
+
+const InstancedGrass: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) => {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+
+  const grassMaterial = useMemo(() => {
+    const mat = new THREE.MeshStandardMaterial({
+      color: '#5a8f5c',
+      flatShading: true,
+      roughness: 0.85,
+    });
+    mat.onBeforeCompile = (shader) => injectWindShader(shader, 0.24);
+    return mat;
+  }, []);
+
+  React.useLayoutEffect(() => {
+    if (!meshRef.current) return;
+    for (let i = 0; i < matrices.length; i++) {
+      meshRef.current.setMatrixAt(i, matrices[i]);
+    }
+    meshRef.current.instanceMatrix.needsUpdate = true;
+  }, [matrices]);
+
+  return (
+    <instancedMesh ref={meshRef} args={[undefined, grassMaterial, matrices.length]}>
+      <coneGeometry args={[0.32, 0.95, 4]} />
+    </instancedMesh>
+  );
+};

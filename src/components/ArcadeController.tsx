@@ -1,0 +1,1172 @@
+import React, { useEffect, useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
+import * as THREE from 'three';
+import {
+  useGameStore,
+  mutablePhysics,
+  PHYSICS_PRESETS,
+  MovementMode,
+  TIME_PRESET_HOURS,
+  CAMPFIRE_WORLD_POS,
+  CAMPFIRE_SEAT_POS,
+  triggerPoofEffect,
+  triggerPlayerEmote,
+} from '../state/gameStore';
+import { sampleTerrain, WATER_LEVEL, TERRAIN_WIDTH, TERRAIN_LENGTH, getTerrainHeightOnly } from '../world/terrainData';
+import {
+  TRANSITION_STATIONS,
+  WILDLIFE_SPECIES,
+  CLIMB_ZONE,
+  TOWER_BASE_X,
+  TOWER_BASE_Y,
+  TOWER_BASE_Z,
+  TOWER_DECK_HEIGHT,
+  ZIPLINE_START,
+  ZIPLINE_END,
+  getZiplinePoint,
+} from '../world/parkActivitiesData';
+import { soundscape } from '../audio/soundscape';
+
+// Module-scope scratch vectors (ZERO allocations inside useFrame)
+const _groundNormal = new THREE.Vector3(0, 1, 0);
+const _forward = new THREE.Vector3(0, 0, 1);
+const _right = new THREE.Vector3(1, 0, 0);
+const _slopeDown = new THREE.Vector3();
+const _velHorizontal = new THREE.Vector3();
+const _riverCurrent = new THREE.Vector3();
+const _targetQuat = new THREE.Quaternion();
+const _upVec = new THREE.Vector3(0, 1, 0);
+const _rotMatrix = new THREE.Matrix4();
+const _slopeForward = new THREE.Vector3();
+const _slopeRight = new THREE.Vector3();
+const _zipPos = new THREE.Vector3();
+const _zipNext = new THREE.Vector3();
+
+interface InputState {
+  forward: boolean;
+  backward: boolean;
+  left: boolean;
+  right: boolean;
+  driftOrHop: boolean;
+  shiftDrift: boolean;
+}
+
+interface CharacterJointRefs {
+  torso: React.RefObject<THREE.Group>;
+  head: React.RefObject<THREE.Group>;
+  scarf: React.RefObject<THREE.Mesh>;
+  leftArm: React.RefObject<THREE.Group>;
+  rightArm: React.RefObject<THREE.Group>;
+  leftLeg: React.RefObject<THREE.Group>;
+  rightLeg: React.RefObject<THREE.Group>;
+}
+
+export const ArcadeController: React.FC = () => {
+  const mode = useGameStore((s) => s.mode);
+  const spawnCounter = useGameStore((s) => s.spawnCounter);
+  const spawnTarget = useGameStore((s) => s.spawnTarget);
+  const audioMuted = useGameStore((s) => s.audioMuted);
+  const binocularsActive = useGameStore((s) => s.binocularsActive);
+  const setMode = useGameStore((s) => s.setMode);
+  const toggleBinoculars = useGameStore((s) => s.toggleBinoculars);
+
+  const rootGroupRef = useRef<THREE.Group>(null);
+  const visualTiltRef = useRef<THREE.Group>(null);
+  const paddleRef = useRef<THREE.Group>(null);
+  const bikeSteerRef = useRef<THREE.Group>(null);
+  const headlampRef = useRef<THREE.SpotLight>(null);
+  const headlampTargetRef = useRef<THREE.Object3D>(null);
+  const headlampLensMatRef = useRef<THREE.MeshStandardMaterial>(null);
+  const emoteRingRef = useRef<THREE.Mesh>(null);
+
+  // Expressive Character Rig Joint Refs
+  const torsoRef = useRef<THREE.Group>(null);
+  const headRef = useRef<THREE.Group>(null);
+  const scarfRef = useRef<THREE.Mesh>(null);
+  const leftArmRef = useRef<THREE.Group>(null);
+  const rightArmRef = useRef<THREE.Group>(null);
+  const leftLegRef = useRef<THREE.Group>(null);
+  const rightLegRef = useRef<THREE.Group>(null);
+
+  const joints: CharacterJointRefs = {
+    torso: torsoRef,
+    head: headRef,
+    scarf: scarfRef,
+    leftArm: leftArmRef,
+    rightArm: rightArmRef,
+    leftLeg: leftLegRef,
+    rightLeg: rightLegRef,
+  };
+
+  const inputRef = useRef<InputState>({
+    forward: false,
+    backward: false,
+    left: false,
+    right: false,
+    driftOrHop: false,
+    shiftDrift: false,
+  });
+
+  const springState = useRef({
+    roll: 0,
+    pitch: 0,
+    carveYaw: 0,
+    bounceY: 0,
+    bounceVel: 0,
+    prevSteer: 0,
+    hopCooldown: 0,
+    walkBob: 0,
+    pedalPhase: 0,
+    headYaw: 0,
+    headPitch: 0,
+    headRoll: 0,
+  });
+
+  useEffect(() => {
+    soundscape.setMuted(audioMuted);
+  }, [audioMuted]);
+
+  // Spawn / Teleport logic
+  useEffect(() => {
+    const p = mutablePhysics;
+    p.stamina = 1.0;
+
+    if (spawnTarget === 'SUMMIT_ROAD') {
+      p.specialState = 'NONE';
+      p.position.set(-10, 74, -212);
+      p.yaw = -0.15;
+    } else if (spawnTarget === 'SUMMIT_TRAIL') {
+      p.specialState = 'NONE';
+      p.position.set(16, 74, -212);
+      p.yaw = 0.25;
+    } else if (spawnTarget === 'LAKE_SHORE') {
+      p.specialState = 'NONE';
+      p.position.set(2, WATER_LEVEL + 0.5, 136);
+      p.yaw = 0.0;
+    } else if (spawnTarget === 'FIREWATCH_TOWER') {
+      p.specialState = 'NONE';
+      p.position.set(TOWER_BASE_X, TOWER_BASE_Y + TOWER_DECK_HEIGHT + 0.3, TOWER_BASE_Z + 2.2);
+      p.yaw = 0.0;
+    } else if (spawnTarget === 'CAMPFIRE_HUB') {
+      p.specialState = 'CAMPFIRE';
+      const seatY = getTerrainHeightOnly(CAMPFIRE_SEAT_POS.x, CAMPFIRE_SEAT_POS.z);
+      p.position.set(CAMPFIRE_SEAT_POS.x, seatY, CAMPFIRE_SEAT_POS.z);
+      p.yaw = -1.45; // Face toward the crackling campfire embers
+    }
+
+    if (spawnTarget !== 'FIREWATCH_TOWER' && spawnTarget !== 'CAMPFIRE_HUB') {
+      const t = sampleTerrain(p.position.x, p.position.z, _groundNormal);
+      p.position.y = Math.max(t.height, WATER_LEVEL) + 0.5;
+    }
+    p.velocity.set(0, 0, 0);
+    p.speed = 0;
+    p.lateralSpeed = 0;
+    triggerPoofEffect(p.position);
+  }, [spawnCounter, spawnTarget]);
+
+  // Contextual Interaction Handler (KeyE)
+  const handleContextualAction = () => {
+    const p = mutablePhysics;
+    const currentMode = useGameStore.getState().mode;
+
+    // 1. If currently in Campfire, Zipline, or Climbing state -> exit back to normal
+    if (p.specialState !== 'NONE') {
+      p.specialState = 'NONE';
+      p.velocity.y = 3.5;
+      return;
+    }
+
+    // 2. Step 4.2: Check proximity to Lakeside Campfire
+    const distToFire = Math.hypot(
+      p.position.x - CAMPFIRE_WORLD_POS.x,
+      p.position.z - CAMPFIRE_WORLD_POS.z
+    );
+    if (distToFire < 6.5) {
+      useGameStore.getState().setMode('WALK', true);
+      p.specialState = 'CAMPFIRE';
+      const seatY = getTerrainHeightOnly(CAMPFIRE_SEAT_POS.x, CAMPFIRE_SEAT_POS.z);
+      p.position.set(CAMPFIRE_SEAT_POS.x, seatY, CAMPFIRE_SEAT_POS.z);
+      p.yaw = Math.atan2(
+        CAMPFIRE_WORLD_POS.x - CAMPFIRE_SEAT_POS.x,
+        CAMPFIRE_WORLD_POS.z - CAMPFIRE_SEAT_POS.z
+      );
+      p.velocity.set(0, 0, 0);
+      p.speed = 0;
+      triggerPlayerEmote();
+      return;
+    }
+
+    // 3. Check proximity to Zipline Start on Firewatch Tower Deck
+    if (p.position.distanceTo(ZIPLINE_START) < 6.5) {
+      useGameStore.getState().setMode('WALK', false);
+      p.specialState = 'ZIPLINE';
+      p.ziplineT = 0.0;
+      p.speed = 12.0;
+      triggerPoofEffect(p.position);
+      return;
+    }
+
+    // 4. Check proximity to Bouldering Wall
+    const distToClimb = Math.hypot(
+      p.position.x - CLIMB_ZONE.centerX,
+      p.position.z - CLIMB_ZONE.centerZ
+    );
+    if (distToClimb < CLIMB_ZONE.radius + 1.8 && p.position.y < CLIMB_ZONE.maxY) {
+      useGameStore.getState().setMode('WALK', true);
+      p.specialState = 'CLIMBING';
+      p.position.z = CLIMB_ZONE.centerZ + 1.95;
+      p.yaw = Math.PI;
+      p.velocity.set(0, 0, 0);
+      return;
+    }
+
+    // 5. Check proximity to any Trailhead Rack / Canoe Dock
+    for (const st of TRANSITION_STATIONS) {
+      if (p.position.distanceTo(st.position) < 6.5) {
+        const nextMode = currentMode === st.targetMode ? st.altMode : st.targetMode;
+        useGameStore.getState().setMode(nextMode, true);
+        return;
+      }
+    }
+  };
+
+  // Keyboard listener
+  useEffect(() => {
+    const unlockAudio = () => soundscape.init();
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      unlockAudio();
+      const code = e.code;
+      const inp = inputRef.current;
+      if (code === 'KeyW' || code === 'KeyZ' || code === 'ArrowUp') inp.forward = true;
+      if (code === 'KeyS' || code === 'ArrowDown') inp.backward = true;
+      if (code === 'KeyA' || code === 'KeyQ' || code === 'ArrowLeft') inp.left = true;
+      if (code === 'KeyD' || code === 'ArrowRight') inp.right = true;
+      if (code === 'Space') inp.driftOrHop = true;
+      if (code === 'ShiftLeft' || code === 'ShiftRight') inp.shiftDrift = true;
+
+      if (code === 'Digit1') setMode('WALK');
+      if (code === 'Digit2') setMode('LONGBOARD');
+      if (code === 'Digit3') setMode('BIKE');
+      if (code === 'Digit4') setMode('CANOE');
+      if (code === 'KeyE') handleContextualAction();
+      if (code === 'KeyC' || code === 'KeyF') triggerPlayerEmote();
+      if (code === 'KeyB') toggleBinoculars();
+      if (code === 'KeyN') {
+        mutablePhysics.timeOfDay =
+          mutablePhysics.nightFactor > 0.5 ? TIME_PRESET_HOURS.GOLDEN : TIME_PRESET_HOURS.NIGHT;
+      }
+      if (code === 'KeyR') {
+        useGameStore.getState().respawnAt(useGameStore.getState().spawnTarget);
+      }
+    };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      const code = e.code;
+      const inp = inputRef.current;
+      if (code === 'KeyW' || code === 'KeyZ' || code === 'ArrowUp') inp.forward = false;
+      if (code === 'KeyS' || code === 'ArrowDown') inp.backward = false;
+      if (code === 'KeyA' || code === 'KeyQ' || code === 'ArrowLeft') inp.left = false;
+      if (code === 'KeyD' || code === 'ArrowRight') inp.right = false;
+      if (code === 'Space') inp.driftOrHop = false;
+      if (code === 'ShiftLeft' || code === 'ShiftRight') inp.shiftDrift = false;
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('pointerdown', unlockAudio);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('pointerdown', unlockAudio);
+    };
+  }, [setMode, toggleBinoculars]);
+
+  useFrame((state, rawDelta) => {
+    const dt = Math.min(rawDelta, 0.04);
+    const p = mutablePhysics;
+    const preset = PHYSICS_PRESETS[mode];
+    const inp = inputRef.current;
+    const sp = springState.current;
+    const elapsed = state.clock.elapsedTime;
+
+    if (sp.hopCooldown > 0) sp.hopCooldown -= dt;
+    if (p.emoteTimer > 0) p.emoteTimer = Math.max(0, p.emoteTimer - dt);
+
+    const steerInput = (inp.left ? 1 : 0) - (inp.right ? 1 : 0);
+    const moveInput = (inp.forward ? 1 : 0) - (inp.backward ? 1 : 0);
+
+    // --- BINOCULARS LOOK MODE ---
+    if (binocularsActive) {
+      p.binocularsYaw += steerInput * 1.45 * dt;
+      p.binocularsPitch = THREE.MathUtils.clamp(
+        p.binocularsPitch + moveInput * 1.1 * dt,
+        -0.65,
+        0.75
+      );
+      p.speed = THREE.MathUtils.damp(p.speed, 0, 8, dt);
+      p.velocity.set(0, 0, 0);
+      soundscape.update(dt, mode);
+      return;
+    }
+
+    // --- UPDATE CONTEXTUAL PROMPT ---
+    let promptText = '';
+    const distToFire = Math.hypot(
+      p.position.x - CAMPFIRE_WORLD_POS.x,
+      p.position.z - CAMPFIRE_WORLD_POS.z
+    );
+
+    if (p.specialState === 'CAMPFIRE') {
+      promptText = '🔥 Warming by the Campfire • [C] Chime / Wave • [E / Space] Stand Up';
+    } else if (p.specialState === 'ZIPLINE') {
+      promptText = '[Space / E] Drop from Zipline';
+    } else if (p.specialState === 'CLIMBING') {
+      promptText = '[WASD] Climb Rock Crag • [Space] Dyno Leap • [E] Let Go';
+    } else if (distToFire < 6.5) {
+      promptText = '🔥 [E] Sit by the Cozy Campfire';
+    } else if (p.position.distanceTo(ZIPLINE_START) < 6.5) {
+      promptText = '⚡ [E] Ride 340m Zipline to Lakeside Camp!';
+    } else {
+      const distToClimb = Math.hypot(
+        p.position.x - CLIMB_ZONE.centerX,
+        p.position.z - CLIMB_ZONE.centerZ
+      );
+      if (distToClimb < CLIMB_ZONE.radius + 1.8 && p.position.y < CLIMB_ZONE.maxY - 1) {
+        promptText = '🧗 [E] Climb Bouldering Wall to Firewatch Tower';
+      } else {
+        for (const st of TRANSITION_STATIONS) {
+          if (p.position.distanceTo(st.position) < 6.5) {
+            const nextM = mode === st.targetMode ? st.altMode : st.targetMode;
+            promptText = `🎒 [E] ${st.label}: Switch to ${PHYSICS_PRESETS[nextM].label}`;
+            break;
+          }
+        }
+      }
+    }
+    p.contextPrompt = promptText;
+
+    // --- SPECIAL STATE 0: SIT BY THE CAMPFIRE (Step 4.2) ---
+    if (p.specialState === 'CAMPFIRE') {
+      const seatY = getTerrainHeightOnly(CAMPFIRE_SEAT_POS.x, CAMPFIRE_SEAT_POS.z);
+      p.position.set(CAMPFIRE_SEAT_POS.x, seatY, CAMPFIRE_SEAT_POS.z);
+      p.yaw = Math.atan2(
+        CAMPFIRE_WORLD_POS.x - CAMPFIRE_SEAT_POS.x,
+        CAMPFIRE_WORLD_POS.z - CAMPFIRE_SEAT_POS.z
+      );
+      _forward.set(Math.sin(p.yaw), 0, Math.cos(p.yaw)).normalize();
+      p.forward.copy(_forward);
+      p.speed = 0;
+      p.velocity.set(0, 0, 0);
+      p.isGrounded = true;
+      p.isDrifting = false;
+
+      if (inp.driftOrHop && sp.hopCooldown <= 0) {
+        p.specialState = 'NONE';
+        p.velocity.y = 4.5;
+        sp.hopCooldown = 0.4;
+      }
+    }
+    // --- SPECIAL STATE 1: ZIPLINE GLIDING (Step 3.3) ---
+    else if (p.specialState === 'ZIPLINE') {
+      p.speed = THREE.MathUtils.damp(p.speed, 29.0, 1.8, dt);
+      const totalLength = ZIPLINE_START.distanceTo(ZIPLINE_END);
+      p.ziplineT += (p.speed / totalLength) * dt;
+
+      if (p.ziplineT >= 0.99 || (inp.driftOrHop && sp.hopCooldown <= 0)) {
+        p.specialState = 'NONE';
+        p.velocity.set(_forward.x * p.speed * 0.6, 2.0, _forward.z * p.speed * 0.6);
+        sp.hopCooldown = 0.4;
+      } else {
+        getZiplinePoint(p.ziplineT, _zipPos);
+        getZiplinePoint(Math.min(1, p.ziplineT + 0.02), _zipNext);
+        p.position.set(_zipPos.x, _zipPos.y - 1.65, _zipPos.z);
+        p.yaw = Math.atan2(_zipNext.x - _zipPos.x, _zipNext.z - _zipPos.z);
+        _forward.set(Math.sin(p.yaw), 0, Math.cos(p.yaw)).normalize();
+        p.forward.copy(_forward);
+        p.isGrounded = false;
+        p.isDrifting = false;
+      }
+    }
+    // --- SPECIAL STATE 2: BOULDERING / ROCK CLIMBING (Step 3.3) ---
+    else if (p.specialState === 'CLIMBING') {
+      p.yaw = Math.PI;
+      _forward.set(0, 0, -1);
+      p.forward.copy(_forward);
+
+      const climbSpeed = 4.6;
+      const vx = -steerInput * climbSpeed * 0.85;
+      let vy = moveInput * climbSpeed;
+
+      if (inp.driftOrHop && sp.hopCooldown <= 0 && p.stamina > 0.18) {
+        vy = 11.5;
+        p.stamina = Math.max(0, p.stamina - 0.18);
+        sp.hopCooldown = 0.45;
+        soundscape.triggerHopSound();
+      }
+
+      p.position.x = THREE.MathUtils.clamp(
+        p.position.x + vx * dt,
+        CLIMB_ZONE.centerX - 2.3,
+        CLIMB_ZONE.centerX + 2.3
+      );
+      p.position.y += vy * dt;
+      p.position.z = CLIMB_ZONE.centerZ + 1.95;
+      p.speed = Math.hypot(vx, vy);
+      sp.walkBob += p.speed * dt * 2.4;
+
+      const drainRate = p.speed > 0.2 ? 0.11 : 0.03;
+      p.stamina = Math.max(0, p.stamina - drainRate * dt);
+
+      if (p.position.y >= TOWER_BASE_Y + TOWER_DECK_HEIGHT) {
+        p.position.set(TOWER_BASE_X, TOWER_BASE_Y + TOWER_DECK_HEIGHT + 0.15, TOWER_BASE_Z + 2.5);
+        p.specialState = 'NONE';
+        p.stamina = 1.0;
+        p.yaw = 0;
+        soundscape.triggerDiscoveryChime();
+      } else if (p.position.y <= CLIMB_ZONE.minY + 0.2 || p.stamina <= 0) {
+        p.specialState = 'NONE';
+        p.velocity.set(0, 0, 3);
+      }
+    }
+    // --- STANDARD 4-STATE ARCADE SPHERE CONTROLLER ---
+    else {
+      p.stamina = Math.min(1.0, p.stamina + 0.38 * dt);
+
+      const terrain = sampleTerrain(p.position.x, p.position.z, _groundNormal);
+      p.groundNormal.copy(_groundNormal);
+      p.surface = terrain.surface;
+      p.waterDepth = terrain.waterDepth;
+
+      const isOnWater = terrain.waterDepth > 0.2;
+      let effectiveGroundY = isOnWater && mode === 'CANOE' ? WATER_LEVEL : terrain.height;
+
+      const onTowerDeck =
+        Math.abs(p.position.x - TOWER_BASE_X) < 4.4 &&
+        Math.abs(p.position.z - TOWER_BASE_Z) < 4.4 &&
+        p.position.y >= TOWER_BASE_Y + TOWER_DECK_HEIGHT - 1.2;
+
+      if (onTowerDeck) {
+        effectiveGroundY = TOWER_BASE_Y + TOWER_DECK_HEIGHT + 0.22;
+        _groundNormal.set(0, 1, 0);
+        p.groundNormal.set(0, 1, 0);
+      }
+
+      const distToClimb = Math.hypot(
+        p.position.x - CLIMB_ZONE.centerX,
+        p.position.z - (CLIMB_ZONE.centerZ + 1.9)
+      );
+      if (
+        mode === 'WALK' &&
+        inp.forward &&
+        distToClimb < 2.2 &&
+        p.position.y < TOWER_BASE_Y + TOWER_DECK_HEIGHT - 2 &&
+        p.stamina > 0.3
+      ) {
+        p.specialState = 'CLIMBING';
+      }
+
+      const groundedThreshold = 0.25;
+      p.isGrounded = p.position.y <= effectiveGroundY + groundedThreshold && p.velocity.y <= 1.5;
+
+      // 2. Steering & Heading Vectors (Snappy turn response at all speeds!)
+      const isBraking = inp.backward;
+      const wantsDrift =
+        (mode === 'LONGBOARD' && (inp.driftOrHop || inp.shiftDrift)) ||
+        (mode === 'BIKE' && (inp.shiftDrift || inp.backward) && Math.abs(steerInput) > 0.1);
+
+      p.isDrifting = p.isGrounded && wantsDrift && p.speed > 5.5;
+
+      const speedFactor =
+        mode === 'WALK' || mode === 'CANOE'
+          ? 1.0
+          : THREE.MathUtils.clamp(p.speed / 3.5, 0.72, 1.2);
+      const driftTurnBoost = p.isDrifting ? 1.45 : 1.0;
+      p.yaw += steerInput * preset.turnSpeed * speedFactor * driftTurnBoost * dt;
+
+      _forward.set(Math.sin(p.yaw), 0, Math.cos(p.yaw)).normalize();
+      _right.set(_forward.z, 0, -_forward.x);
+      p.forward.copy(_forward);
+
+      // 3. Decompose Horizontal Velocity
+      _velHorizontal.set(p.velocity.x, 0, p.velocity.z);
+      let forwardVel = _velHorizontal.dot(_forward);
+      let lateralVel = _velHorizontal.dot(_right);
+
+      // 4. Slope Gravity Projection
+      _slopeDown.set(_groundNormal.x, 0, _groundNormal.z);
+      const slopeStrength = _slopeDown.length();
+      p.slopeAngle = Math.asin(THREE.MathUtils.clamp(slopeStrength, 0, 1)) * (180 / Math.PI);
+
+      if (p.isGrounded && !isOnWater && !onTowerDeck && mode !== 'WALK') {
+        const gravityAccel = 22.0 * preset.gravityScale;
+        forwardVel += _slopeDown.dot(_forward) * gravityAccel * dt;
+        lateralVel += _slopeDown.dot(_right) * gravityAccel * 0.45 * dt;
+      }
+
+      // 5. Mode-Specific Propulsion
+      if (mode === 'LONGBOARD') {
+        if (inp.forward && forwardVel < preset.maxSpeed) {
+          forwardVel += preset.accelForce * dt;
+        }
+        const steerDelta = Math.abs(steerInput - sp.prevSteer);
+        p.isPumping = p.isGrounded && !p.isDrifting && Math.abs(steerInput) > 0 && forwardVel > 3.0;
+        if (steerDelta > 0.5 && p.isGrounded && forwardVel > 2.5 && forwardVel < preset.maxSpeed) {
+          forwardVel += 1.15;
+        }
+        if (inp.driftOrHop && p.isGrounded && p.speed <= 6.5 && sp.hopCooldown <= 0) {
+          p.velocity.y = preset.hopImpulse;
+          p.isGrounded = false;
+          sp.hopCooldown = 0.45;
+          soundscape.triggerHopSound();
+        }
+      } else if (mode === 'BIKE') {
+        p.isPumping = false;
+        if (inp.forward && forwardVel < preset.maxSpeed) {
+          forwardVel += preset.accelForce * dt;
+        }
+        sp.pedalPhase += Math.max(0, forwardVel) * dt * 0.85;
+        if (inp.driftOrHop && p.isGrounded && sp.hopCooldown <= 0) {
+          p.velocity.y = preset.hopImpulse;
+          p.isGrounded = false;
+          sp.hopCooldown = 0.45;
+          sp.bounceVel = 6.0;
+          soundscape.triggerHopSound();
+        }
+        if (p.isGrounded && p.surface === 'DIRT' && p.speed > 4) {
+          sp.bounceVel += Math.sin(p.position.z * 1.8) * 0.35;
+        }
+      } else if (mode === 'CANOE') {
+        p.isPumping = false;
+        const waterEfficiency = isOnWater ? 1.0 : 0.22;
+        if (inp.forward) {
+          p.paddlePhase += dt * 5.2;
+          const strokePulse = 0.75 + 0.45 * Math.max(0, Math.sin(p.paddlePhase));
+          if (forwardVel < preset.maxSpeed * waterEfficiency) {
+            forwardVel += preset.accelForce * strokePulse * waterEfficiency * dt;
+          }
+          if (Math.sin(p.paddlePhase) < -0.8) {
+            p.paddleSide = steerInput !== 0 ? steerInput : -p.paddleSide;
+          }
+        } else {
+          p.paddlePhase = THREE.MathUtils.damp(p.paddlePhase, 0, 4, dt);
+        }
+
+        if (isOnWater) {
+          _riverCurrent.set(-1.2, 0, 1.8);
+          forwardVel += _riverCurrent.dot(_forward) * dt;
+          lateralVel += _riverCurrent.dot(_right) * dt;
+        }
+      } else {
+        // WALK mode
+        p.isPumping = false;
+        if (inp.forward) {
+          forwardVel = THREE.MathUtils.damp(forwardVel, preset.maxSpeed, 8, dt);
+          sp.walkBob += dt * 12;
+        } else if (inp.backward) {
+          forwardVel = THREE.MathUtils.damp(forwardVel, -preset.maxSpeed * 0.6, 8, dt);
+          sp.walkBob += dt * 8;
+        } else {
+          forwardVel = THREE.MathUtils.damp(forwardVel, 0, 10, dt);
+        }
+        if (inp.driftOrHop && p.isGrounded && sp.hopCooldown <= 0) {
+          p.velocity.y = preset.hopImpulse;
+          p.isGrounded = false;
+          sp.hopCooldown = 0.45;
+          soundscape.triggerHopSound();
+        }
+      }
+
+      sp.prevSteer = steerInput;
+
+      // 6. Surface Friction & Braking
+      let surfaceDragMultiplier = 1.0;
+      if (mode === 'LONGBOARD') {
+        if (p.surface === 'ASPHALT') surfaceDragMultiplier = 0.75;
+        else if (p.surface === 'DIRT') surfaceDragMultiplier = 2.4;
+        else if (p.surface === 'GRASS' || p.surface === 'SAND') surfaceDragMultiplier = 4.2;
+        else if (p.surface === 'WATER') surfaceDragMultiplier = 8.0;
+      } else if (mode === 'BIKE') {
+        if (p.surface === 'DIRT' || p.surface === 'ASPHALT') surfaceDragMultiplier = 0.85;
+        else if (p.surface === 'GRASS' || p.surface === 'SAND') surfaceDragMultiplier = 1.65;
+        else if (p.surface === 'WATER') surfaceDragMultiplier = 6.5;
+      } else if (mode === 'CANOE') {
+        surfaceDragMultiplier = isOnWater ? 0.65 : 6.5;
+      }
+
+      const drag = preset.rollingResistance * surfaceDragMultiplier;
+      forwardVel = THREE.MathUtils.damp(forwardVel, 0, drag, dt);
+
+      if (isBraking && mode !== 'WALK') {
+        if (forwardVel > 0.5) {
+          const brakeDecel = p.isDrifting ? 11.0 : 19.0;
+          forwardVel = Math.max(0, forwardVel - brakeDecel * dt);
+        } else {
+          forwardVel = THREE.MathUtils.damp(forwardVel, -3.5, 4, dt);
+        }
+      }
+
+      const activeGrip = p.isDrifting ? preset.driftGrip : preset.lateralGrip;
+      lateralVel = THREE.MathUtils.damp(lateralVel, 0, activeGrip, dt);
+      forwardVel = THREE.MathUtils.clamp(forwardVel, -6, preset.maxSpeed * 1.15);
+
+      p.velocity.x = _forward.x * forwardVel + _right.x * lateralVel;
+      p.velocity.z = _forward.z * forwardVel + _right.z * lateralVel;
+      p.speed = Math.hypot(p.velocity.x, p.velocity.z);
+      p.lateralSpeed = lateralVel;
+
+      // 7. Vertical Integration & Ground Snapping
+      p.velocity.y -= 24.0 * dt;
+      p.position.x += p.velocity.x * dt;
+      p.position.y += p.velocity.y * dt;
+      p.position.z += p.velocity.z * dt;
+
+      const halfW = TERRAIN_WIDTH * 0.47;
+      const halfL = TERRAIN_LENGTH * 0.47;
+      p.position.x = THREE.MathUtils.clamp(p.position.x, -halfW, halfW);
+      p.position.z = THREE.MathUtils.clamp(p.position.z, -halfL, halfL);
+
+      const newTerrain = sampleTerrain(p.position.x, p.position.z, _groundNormal);
+      const newOnWater = newTerrain.waterDepth > 0.2;
+      let targetFloorY =
+        newOnWater && mode === 'CANOE'
+          ? WATER_LEVEL + Math.sin(elapsed * 3.0) * 0.06
+          : newTerrain.height;
+
+      const stillOnTowerDeck =
+        Math.abs(p.position.x - TOWER_BASE_X) < 4.4 &&
+        Math.abs(p.position.z - TOWER_BASE_Z) < 4.4 &&
+        p.position.y >= TOWER_BASE_Y + TOWER_DECK_HEIGHT - 1.2;
+
+      if (stillOnTowerDeck) {
+        targetFloorY = TOWER_BASE_Y + TOWER_DECK_HEIGHT + 0.22;
+      }
+
+      if (p.position.y <= targetFloorY) {
+        if (!p.isGrounded && p.velocity.y < -3.0) {
+          sp.bounceVel = p.velocity.y * 0.35;
+        }
+        p.position.y = targetFloorY;
+        p.velocity.y = 0;
+        p.isGrounded = true;
+      }
+    }
+
+    // --- 8. EXPRESSIVE ARTICULATED CHARACTER RIG & PROPER RIGHT-HANDED BASIS ROTATION ---
+    if (rootGroupRef.current && visualTiltRef.current) {
+      rootGroupRef.current.position.copy(p.position);
+
+      const effectiveNormal =
+        p.specialState !== 'NONE' || (p.waterDepth > 0.2 && mode === 'CANOE')
+          ? _upVec
+          : _groundNormal;
+
+      // Proper Right-Handed Orthonormal Basis: X = Y x Z (det = +1)
+      _slopeRight.crossVectors(effectiveNormal, _forward).normalize();
+      _slopeForward.crossVectors(_slopeRight, effectiveNormal).normalize();
+      _rotMatrix.makeBasis(_slopeRight, effectiveNormal, _slopeForward);
+      _targetQuat.setFromRotationMatrix(_rotMatrix);
+      rootGroupRef.current.quaternion.slerp(_targetQuat, Math.min(1, dt * 16));
+
+      const targetRoll =
+        p.specialState === 'CAMPFIRE'
+          ? 0
+          : p.specialState === 'ZIPLINE'
+          ? Math.sin(elapsed * 3.5) * 0.14 - steerInput * 0.25
+          : -steerInput * preset.leanFactor * THREE.MathUtils.clamp(p.speed / 12, 0.35, 1.35) +
+            (p.isDrifting ? -steerInput * 0.28 : 0);
+
+      const targetPitch =
+        p.specialState === 'CAMPFIRE'
+          ? 0
+          : p.specialState === 'ZIPLINE'
+          ? 0.18
+          : !p.isGrounded && p.specialState === 'NONE'
+          ? THREE.MathUtils.clamp(-p.velocity.y * 0.04, -0.35, 0.35)
+          : 0;
+
+      // Extra responsive visual carve yaw into turns & powerslides
+      const targetCarveYaw =
+        p.specialState !== 'NONE'
+          ? 0
+          : p.isDrifting
+          ? steerInput * 0.52
+          : steerInput * 0.22;
+
+      sp.roll = THREE.MathUtils.damp(sp.roll, targetRoll, 10.0, dt);
+      sp.pitch = THREE.MathUtils.damp(sp.pitch, targetPitch, 8.0, dt);
+      sp.carveYaw = THREE.MathUtils.damp(sp.carveYaw, targetCarveYaw, 10.0, dt);
+
+      sp.bounceVel += -120 * sp.bounceY * dt;
+      sp.bounceVel *= Math.exp(-10 * dt);
+      sp.bounceY += sp.bounceVel * dt;
+
+      const walkBounce =
+        mode === 'WALK' && p.specialState === 'NONE' && p.speed > 0.5
+          ? Math.abs(Math.sin(sp.walkBob)) * 0.12
+          : 0;
+
+      visualTiltRef.current.position.y =
+        p.specialState === 'CAMPFIRE' ? -0.18 : Math.max(-0.2, sp.bounceY) + walkBounce;
+      visualTiltRef.current.rotation.set(sp.pitch, sp.carveYaw, sp.roll);
+    }
+
+    // Animate Expanding Emote Chime Ring (Step 4.2)
+    if (emoteRingRef.current) {
+      if (p.emoteTimer > 0) {
+        const progress = 1.0 - p.emoteTimer / 1.6;
+        const s = 0.5 + progress * 5.5;
+        emoteRingRef.current.visible = true;
+        emoteRingRef.current.scale.set(s, s, s);
+        const mat = emoteRingRef.current.material as THREE.MeshBasicMaterial;
+        mat.opacity = (1.0 - progress) * 0.75;
+      } else {
+        emoteRingRef.current.visible = false;
+      }
+    }
+
+    // Animate Head Gaze (Turn anticipation + POI curiosity glance)
+    if (headRef.current) {
+      let desiredHeadYaw = steerInput * 0.58 + (p.isDrifting ? steerInput * 0.25 : 0);
+      let desiredHeadPitch =
+        p.specialState === 'CAMPFIRE'
+          ? 0.18 + Math.sin(elapsed * 1.8) * 0.05 // Looking warmly into the fire embers
+          : !p.isGrounded && p.specialState === 'NONE'
+          ? -0.22
+          : p.specialState === 'CLIMBING'
+          ? -0.45
+          : mode === 'LONGBOARD' && p.speed > 20
+          ? -0.25
+          : Math.sin(elapsed * 1.6) * 0.04;
+      const desiredHeadRoll = steerInput * 0.22;
+
+      if (Math.abs(steerInput) < 0.1 && p.speed < 18 && p.specialState === 'NONE') {
+        let closestDist = 32.0;
+        let poiX = 0;
+        let poiY = 0;
+        let poiZ = 0;
+        let foundPoi = false;
+
+        for (const w of WILDLIFE_SPECIES) {
+          const d = p.position.distanceTo(w.basePos);
+          if (d < closestDist) {
+            closestDist = d;
+            poiX = w.basePos.x;
+            poiY = w.basePos.y;
+            poiZ = w.basePos.z;
+            foundPoi = true;
+          }
+        }
+        for (const st of TRANSITION_STATIONS) {
+          const d = p.position.distanceTo(st.position);
+          if (d < 14.0 && d < closestDist) {
+            closestDist = d;
+            poiX = st.position.x;
+            poiY = st.position.y + 1.5;
+            poiZ = st.position.z;
+            foundPoi = true;
+          }
+        }
+
+        if (foundPoi) {
+          const angleToPoi = Math.atan2(poiX - p.position.x, poiZ - p.position.z);
+          let relYaw = angleToPoi - p.yaw;
+          relYaw = Math.atan2(Math.sin(relYaw), Math.cos(relYaw));
+          if (Math.abs(relYaw) < 1.25) {
+            desiredHeadYaw = THREE.MathUtils.clamp(relYaw * 0.75, -0.75, 0.75);
+            const dy = poiY - (p.position.y + 1.4);
+            desiredHeadPitch = THREE.MathUtils.clamp(-dy / Math.max(4, closestDist), -0.45, 0.35);
+          }
+        }
+      }
+
+      if (mode === 'LONGBOARD' && p.specialState === 'NONE') {
+        desiredHeadYaw -= 0.45;
+      }
+
+      sp.headYaw = THREE.MathUtils.damp(sp.headYaw, desiredHeadYaw, 7.5, dt);
+      sp.headPitch = THREE.MathUtils.damp(sp.headPitch, desiredHeadPitch, 7.5, dt);
+      sp.headRoll = THREE.MathUtils.damp(sp.headRoll, desiredHeadRoll, 7.5, dt);
+
+      headRef.current.rotation.set(sp.headPitch, sp.headYaw, sp.headRoll);
+    }
+
+    // Animate Flowing Scarf in Wind
+    if (scarfRef.current) {
+      const windFlutter = Math.sin(elapsed * (6 + p.speed * 0.8)) * (0.12 + p.speed * 0.012);
+      scarfRef.current.rotation.x = 0.35 + Math.min(1.05, p.speed * 0.04) + windFlutter;
+      scarfRef.current.rotation.y = -steerInput * 0.3 + Math.cos(elapsed * 8) * 0.08;
+    }
+
+    // Animate Torso, Arms & Legs per Mode / Special State
+    if (
+      torsoRef.current &&
+      leftArmRef.current &&
+      rightArmRef.current &&
+      leftLegRef.current &&
+      rightLegRef.current
+    ) {
+      if (p.specialState === 'CAMPFIRE') {
+        // Seated on log warming hands toward the crackling campfire!
+        const breathe = Math.sin(elapsed * 2.2) * 0.04;
+        torsoRef.current.rotation.set(0.22 + breathe, 0, 0);
+        leftArmRef.current.rotation.set(-1.1 + breathe, 0.25, 0.15);
+        rightArmRef.current.rotation.set(-1.1 + breathe, -0.25, -0.15);
+        leftLegRef.current.rotation.set(-1.35, 0.12, 0);
+        rightLegRef.current.rotation.set(-1.35, -0.12, 0);
+      } else if (p.specialState === 'ZIPLINE') {
+        torsoRef.current.rotation.set(0.1, 0, 0);
+        leftArmRef.current.rotation.set(-2.75, 0, 0.25);
+        rightArmRef.current.rotation.set(-2.75, 0, -0.25);
+        leftLegRef.current.rotation.set(0.35 + Math.sin(elapsed * 6) * 0.18, 0, 0);
+        rightLegRef.current.rotation.set(0.2 + Math.cos(elapsed * 6) * 0.18, 0, 0);
+      } else if (p.specialState === 'CLIMBING') {
+        const climbCycle = sp.walkBob;
+        torsoRef.current.rotation.set(-0.12, Math.sin(climbCycle) * 0.12, 0);
+        leftArmRef.current.rotation.set(-2.2 + Math.sin(climbCycle) * 0.55, 0, 0.3);
+        rightArmRef.current.rotation.set(-2.2 - Math.sin(climbCycle) * 0.55, 0, -0.3);
+        leftLegRef.current.rotation.set(-0.4 - Math.sin(climbCycle) * 0.45, 0, 0.1);
+        rightLegRef.current.rotation.set(-0.4 + Math.sin(climbCycle) * 0.45, 0, -0.1);
+      } else if (mode === 'LONGBOARD') {
+        const isAeroTuck = p.speed > 21 && !p.isDrifting;
+        const targetTorsoPitch = isAeroTuck ? 0.55 : 0.12;
+        const targetTorsoYaw = steerInput * 0.28;
+        torsoRef.current.rotation.x = THREE.MathUtils.damp(
+          torsoRef.current.rotation.x,
+          targetTorsoPitch,
+          8,
+          dt
+        );
+        torsoRef.current.rotation.y = THREE.MathUtils.damp(
+          torsoRef.current.rotation.y,
+          targetTorsoYaw,
+          8,
+          dt
+        );
+
+        if (isAeroTuck) {
+          leftArmRef.current.rotation.set(0.75, 0, 0.25);
+          rightArmRef.current.rotation.set(0.75, 0, -0.25);
+        } else {
+          const wave = Math.sin(elapsed * 3.5) * 0.08;
+          leftArmRef.current.rotation.set(-0.2 + steerInput * 0.3, 0, 0.85 + wave);
+          rightArmRef.current.rotation.set(0.2 - steerInput * 0.3, 0, -0.85 - wave);
+        }
+        leftLegRef.current.rotation.set(-0.22, 0, 0.12);
+        rightLegRef.current.rotation.set(0.22, 0, -0.12);
+      } else if (mode === 'BIKE') {
+        torsoRef.current.rotation.set(0.38, steerInput * 0.15, 0);
+        leftArmRef.current.rotation.set(-0.95 + steerInput * 0.18, 0, 0.22);
+        rightArmRef.current.rotation.set(-0.95 - steerInput * 0.18, 0, -0.22);
+        leftLegRef.current.rotation.set(Math.sin(sp.pedalPhase) * 0.55 - 0.2, 0, 0);
+        rightLegRef.current.rotation.set(Math.sin(sp.pedalPhase + Math.PI) * 0.55 - 0.2, 0, 0);
+      } else if (mode === 'CANOE') {
+        const stroke = Math.sin(p.paddlePhase);
+        torsoRef.current.rotation.set(0.15 + stroke * 0.18, -p.paddleSide * 0.25 * stroke, 0);
+        leftArmRef.current.rotation.set(-0.7 + stroke * 0.45, 0, 0.25);
+        rightArmRef.current.rotation.set(-0.7 + stroke * 0.45, 0, -0.25);
+        leftLegRef.current.rotation.set(-1.1, 0, 0);
+        rightLegRef.current.rotation.set(-1.1, 0, 0);
+      } else {
+        const stride = p.speed > 0.4 ? Math.sin(sp.walkBob) * Math.min(1, p.speed / 6) : 0;
+        torsoRef.current.rotation.set(p.speed * 0.015, -stride * 0.15, 0);
+        leftArmRef.current.rotation.set(stride * 0.65, 0, 0.12);
+        rightArmRef.current.rotation.set(-stride * 0.65, 0, -0.12);
+        leftLegRef.current.rotation.set(-stride * 0.75, 0, 0);
+        rightLegRef.current.rotation.set(stride * 0.75, 0, 0);
+      }
+
+      // Step 4.2: Override Right Arm with Joyful Hand Wave during Emote!
+      if (p.emoteTimer > 0 && p.specialState !== 'ZIPLINE' && p.specialState !== 'CLIMBING') {
+        rightArmRef.current.rotation.set(
+          -2.55,
+          0,
+          -0.45 + Math.sin(elapsed * 16) * 0.42
+        );
+      }
+    }
+
+    // Steer Bike Handlebars visually
+    if (bikeSteerRef.current && mode === 'BIKE') {
+      bikeSteerRef.current.rotation.y = THREE.MathUtils.damp(
+        bikeSteerRef.current.rotation.y,
+        steerInput * 0.45,
+        10,
+        dt
+      );
+    }
+
+    if (paddleRef.current && mode === 'CANOE') {
+      const phase = p.paddlePhase;
+      paddleRef.current.rotation.z = p.paddleSide * 0.45 + Math.cos(phase) * 0.25;
+      paddleRef.current.rotation.x = Math.sin(phase) * 0.55;
+    }
+
+    // 9. Automatic Warm Front Headlamp at Dusk/Night
+    if (headlampRef.current && headlampTargetRef.current) {
+      const targetIntensity = p.headlampOn ? THREE.MathUtils.lerp(0, 14.0, p.nightFactor) : 0;
+      headlampRef.current.intensity = THREE.MathUtils.damp(
+        headlampRef.current.intensity,
+        targetIntensity,
+        6,
+        dt
+      );
+      headlampRef.current.target = headlampTargetRef.current;
+      headlampTargetRef.current.updateMatrixWorld();
+    }
+    if (headlampLensMatRef.current) {
+      headlampLensMatRef.current.emissiveIntensity = p.headlampOn ? 2.5 : 0.05;
+    }
+
+    // 10. Update Web Audio Soundscape
+    soundscape.update(dt, mode);
+  });
+
+  const showVehicles = mutablePhysics.specialState === 'NONE';
+
+  return (
+    <group ref={rootGroupRef}>
+      <group ref={visualTiltRef}>
+        <ExplorerCharacter
+          mode={mode}
+          joints={joints}
+          headlampLensMatRef={headlampLensMatRef}
+        />
+
+        {/* Step 4.2: Expanding Golden Emote / Bell Chime Ring */}
+        <mesh
+          ref={emoteRingRef}
+          position={[0, 1.15, 0]}
+          rotation={[Math.PI / 2, 0, 0]}
+          visible={false}
+        >
+          <ringGeometry args={[0.78, 0.95, 24]} />
+          <meshBasicMaterial
+            color="#ffd166"
+            side={THREE.DoubleSide}
+            transparent
+            opacity={0.75}
+          />
+        </mesh>
+
+        {/* Player Warm Headlamp SpotLight */}
+        <spotLight
+          ref={headlampRef}
+          position={[0, 1.48, 0.22]}
+          color="#ffe3a8"
+          intensity={0}
+          distance={46}
+          angle={0.58}
+          penumbra={0.65}
+          decay={1.4}
+          castShadow
+        />
+        <object3D ref={headlampTargetRef} position={[0, -0.35, 14]} />
+
+        {showVehicles && mode === 'LONGBOARD' && <LongboardMesh />}
+        {showVehicles && mode === 'BIKE' && <MountainBikeMesh steerRef={bikeSteerRef} />}
+        {showVehicles && mode === 'CANOE' && <CanoeMesh paddleRef={paddleRef} />}
+      </group>
+    </group>
+  );
+};
+
+const ExplorerCharacter: React.FC<{
+  mode: MovementMode;
+  joints: CharacterJointRefs;
+  headlampLensMatRef: React.RefObject<THREE.MeshStandardMaterial>;
+}> = ({ mode, joints, headlampLensMatRef }) => {
+  const isSpecial = mutablePhysics.specialState !== 'NONE';
+  const yOffset = isSpecial
+    ? 0
+    : mode === 'LONGBOARD'
+    ? 0.18
+    : mode === 'BIKE'
+    ? 0.42
+    : mode === 'CANOE'
+    ? -0.12
+    : 0;
+  const bodyRotY = !isSpecial && mode === 'LONGBOARD' ? 0.45 : 0;
+
+  return (
+    <group position={[0, yOffset, 0]} rotation={[0, bodyRotY, 0]}>
+      <group ref={joints.leftLeg} position={[-0.14, 0.62, 0]}>
+        <mesh castShadow position={[0, -0.25, 0]}>
+          <boxGeometry args={[0.16, 0.52, 0.18]} />
+          <meshStandardMaterial color="#2b3a4a" flatShading />
+        </mesh>
+      </group>
+      <group ref={joints.rightLeg} position={[0.14, 0.62, 0]}>
+        <mesh castShadow position={[0, -0.25, 0]}>
+          <boxGeometry args={[0.16, 0.52, 0.18]} />
+          <meshStandardMaterial color="#2b3a4a" flatShading />
+        </mesh>
+      </group>
+
+      <group ref={joints.torso} position={[0, 0.62, 0]}>
+        <mesh castShadow position={[0, 0.28, 0]}>
+          <boxGeometry args={[0.46, 0.58, 0.28]} />
+          <meshStandardMaterial color="#d94e34" flatShading />
+        </mesh>
+
+        <group ref={joints.leftArm} position={[-0.31, 0.5, 0]}>
+          <mesh castShadow position={[0, -0.22, 0]}>
+            <boxGeometry args={[0.14, 0.48, 0.14]} />
+            <meshStandardMaterial color="#e76f51" flatShading />
+          </mesh>
+          <mesh castShadow position={[0, -0.46, 0]}>
+            <dodecahedronGeometry args={[0.08, 0]} />
+            <meshStandardMaterial color="#2b3a4a" flatShading />
+          </mesh>
+        </group>
+
+        <group ref={joints.rightArm} position={[0.31, 0.5, 0]}>
+          <mesh castShadow position={[0, -0.22, 0]}>
+            <boxGeometry args={[0.14, 0.48, 0.14]} />
+            <meshStandardMaterial color="#e76f51" flatShading />
+          </mesh>
+          <mesh castShadow position={[0, -0.46, 0]}>
+            <dodecahedronGeometry args={[0.08, 0]} />
+            <meshStandardMaterial color="#2b3a4a" flatShading />
+          </mesh>
+        </group>
+
+        <mesh castShadow position={[0, 0.3, -0.22]}>
+          <boxGeometry args={[0.38, 0.48, 0.22]} />
+          <meshStandardMaterial color="#e09f3e" flatShading />
+        </mesh>
+        <mesh castShadow position={[0, 0.6, -0.22]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.09, 0.09, 0.42, 6]} />
+          <meshStandardMaterial color="#386641" flatShading />
+        </mesh>
+
+        <mesh
+          ref={joints.scarf}
+          castShadow
+          position={[0, 0.56, -0.14]}
+          rotation={[0.45, 0, 0]}
+        >
+          <boxGeometry args={[0.18, 0.06, 0.62]} />
+          <meshStandardMaterial color="#ffd166" flatShading />
+        </mesh>
+
+        <group ref={joints.head} position={[0, 0.6, 0]}>
+          <mesh castShadow position={[0, 0.14, 0]}>
+            <dodecahedronGeometry args={[0.2, 0]} />
+            <meshStandardMaterial color="#f3d5b5" flatShading />
+          </mesh>
+          <mesh castShadow position={[0, 0.16, 0.16]}>
+            <boxGeometry args={[0.28, 0.1, 0.08]} />
+            <meshStandardMaterial color="#1d3557" flatShading roughness={0.2} />
+          </mesh>
+          <mesh castShadow position={[0, 0.26, -0.02]}>
+            <coneGeometry args={[0.21, 0.28, 6]} />
+            <meshStandardMaterial color="#f4a261" flatShading />
+          </mesh>
+          <mesh castShadow position={[0, 0.42, -0.04]}>
+            <dodecahedronGeometry args={[0.065, 0]} />
+            <meshStandardMaterial color="#fffbeb" flatShading />
+          </mesh>
+          <mesh position={[0, 0.25, 0.17]}>
+            <boxGeometry args={[0.12, 0.07, 0.07]} />
+            <meshStandardMaterial
+              ref={headlampLensMatRef}
+              color="#fffbeb"
+              emissive="#ffd166"
+              emissiveIntensity={0.1}
+              flatShading
+            />
+          </mesh>
+        </group>
+      </group>
+    </group>
+  );
+};
+
+const LongboardMesh: React.FC = () => (
+  <group position={[0, 0.12, 0]}>
+    <mesh castShadow receiveShadow>
+      <boxGeometry args={[0.44, 0.06, 1.65]} />
+      <meshStandardMaterial color="#e09f3e" flatShading />
+    </mesh>
+    <mesh position={[0, 0.032, 0]}>
+      <boxGeometry args={[0.14, 0.01, 1.55]} />
+      <meshStandardMaterial color="#d94e34" flatShading />
+    </mesh>
+    {[
+      [-0.26, -0.04, 0.58],
+      [0.26, -0.04, 0.58],
+      [-0.26, -0.04, -0.58],
+      [0.26, -0.04, -0.58],
+    ].map(([x, y, z], i) => (
+      <mesh key={i} castShadow position={[x, y, z]} rotation={[0, 0, Math.PI / 2]}>
+        <cylinderGeometry args={[0.1, 0.1, 0.12, 8]} />
+        <meshStandardMaterial color="#ff6b35" flatShading />
+      </mesh>
+    ))}
+  </group>
+);
+
+const MountainBikeMesh: React.FC<{ steerRef: React.RefObject<THREE.Group> }> = ({ steerRef }) => (
+  <group position={[0, 0.05, 0]}>
+    <mesh castShadow position={[0, 0.34, -0.68]} rotation={[0, Math.PI / 2, 0]}>
+      <torusGeometry args={[0.32, 0.07, 6, 12]} />
+      <meshStandardMaterial color="#22272e" flatShading />
+    </mesh>
+    <mesh castShadow position={[0, 0.58, 0.05]} rotation={[0.45, 0, 0]}>
+      <boxGeometry args={[0.08, 0.08, 1.25]} />
+      <meshStandardMaterial color="#52b788" flatShading />
+    </mesh>
+
+    <group ref={steerRef} position={[0, 0.62, 0.58]}>
+      <mesh castShadow position={[0, 0, 0]} rotation={[-0.22, 0, 0]}>
+        <cylinderGeometry args={[0.04, 0.04, 0.72, 6]} />
+        <meshStandardMaterial color="#e8dcc4" flatShading />
+      </mesh>
+      <mesh castShadow position={[0, 0.33, 0.04]} rotation={[0, 0, Math.PI / 2]}>
+        <cylinderGeometry args={[0.035, 0.035, 0.95, 6]} />
+        <meshStandardMaterial color="#22272e" flatShading />
+      </mesh>
+      {/* Brass Bicycle Bell on Right Handlebar! */}
+      <mesh castShadow position={[-0.28, 0.37, 0.04]}>
+        <cylinderGeometry args={[0.045, 0.045, 0.04, 8]} />
+        <meshStandardMaterial color="#ffd166" metalness={0.6} roughness={0.3} flatShading />
+      </mesh>
+      <mesh castShadow position={[0, -0.28, 0.1]} rotation={[0, Math.PI / 2, 0]}>
+        <torusGeometry args={[0.32, 0.07, 6, 12]} />
+        <meshStandardMaterial color="#22272e" flatShading />
+      </mesh>
+    </group>
+  </group>
+);
+
+const CanoeMesh: React.FC<{ paddleRef: React.RefObject<THREE.Group> }> = ({ paddleRef }) => (
+  <group position={[0, 0.22, 0]}>
+    <mesh castShadow receiveShadow position={[0, 0.05, 0]}>
+      <boxGeometry args={[0.92, 0.38, 2.8]} />
+      <meshStandardMaterial color="#bc4749" flatShading />
+    </mesh>
+    <mesh castShadow position={[0, 0.14, 1.65]} rotation={[Math.PI / 2, 0, 0]}>
+      <coneGeometry args={[0.46, 0.75, 4]} />
+      <meshStandardMaterial color="#bc4749" flatShading />
+    </mesh>
+    <mesh castShadow position={[0, 0.14, -1.65]} rotation={[-Math.PI / 2, 0, 0]}>
+      <coneGeometry args={[0.46, 0.75, 4]} />
+      <meshStandardMaterial color="#bc4749" flatShading />
+    </mesh>
+    <mesh castShadow position={[0, 0.25, 0]}>
+      <boxGeometry args={[0.96, 0.05, 2.82]} />
+      <meshStandardMaterial color="#d4a373" flatShading />
+    </mesh>
+    <group ref={paddleRef} position={[0, 0.65, 0.25]}>
+      <mesh castShadow position={[0.52, -0.15, 0]} rotation={[0, 0, -0.4]}>
+        <cylinderGeometry args={[0.025, 0.025, 1.35, 5]} />
+        <meshStandardMaterial color="#e9c46a" flatShading />
+      </mesh>
+      <mesh castShadow position={[0.78, -0.62, 0]} rotation={[0, 0, -0.4]}>
+        <boxGeometry args={[0.04, 0.45, 0.2]} />
+        <meshStandardMaterial color="#d94e34" flatShading />
+      </mesh>
+    </group>
+  </group>
+);
