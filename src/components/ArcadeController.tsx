@@ -151,11 +151,11 @@ export const ArcadeController: React.FC = () => {
 
     if (spawnTarget === 'SUMMIT_ROAD') {
       p.specialState = 'NONE';
-      p.position.set(-10, 124, -455);
+      p.position.set(-10, 210, -455);
       p.yaw = -0.08;
     } else if (spawnTarget === 'SUMMIT_TRAIL') {
       p.specialState = 'NONE';
-      p.position.set(16, 124, -455);
+      p.position.set(16, 210, -455);
       p.yaw = 0.22;
     } else if (spawnTarget === 'LAKE_SHORE') {
       p.specialState = 'NONE';

@@ -90,11 +90,11 @@ function computeRawMountainElevation(x: number, z: number): number {
   // Normalized progression from Summit (t=0 at Z=-465) to Mirror Lake Shore (t=1 at Z=+250)
   const slopeT = THREE.MathUtils.clamp((z + 465) / 715, 0, 1.35);
 
-  // Smooth S-curve mountain drop: 124m at summit down to 0m at Z=+250
+  // Smooth S-curve mountain drop: 210m alpine summit down to 0m at Z=+250
   let baseHeight = 0;
   if (slopeT <= 1.0) {
     const smooth = 1.0 - slopeT;
-    baseHeight = 124.0 * Math.pow(smooth, 1.36);
+    baseHeight = 210.0 * Math.pow(smooth, 1.38);
   } else {
     // Mirror Lake basin (Z > 250 dips smoothly underwater to -7.5m)
     const waterT = THREE.MathUtils.clamp((z - 250) / 180, 0, 1);
@@ -104,7 +104,7 @@ function computeRawMountainElevation(x: number, z: number): number {
   // Dramatic Canadian canyon walls on far left/right flanks
   const edgeDist = Math.max(0, Math.abs(x) - 88);
   const canyonWall =
-    Math.pow(edgeDist / 48, 1.85) * 22.0 * THREE.MathUtils.clamp(1.2 - slopeT * 0.82, 0.25, 1.0);
+    Math.pow(edgeDist / 48, 1.85) * 28.0 * THREE.MathUtils.clamp(1.2 - slopeT * 0.82, 0.25, 1.0);
 
   // Multi-octave Simplex noise for natural rocky ridges and undulations
   const macroNoise = fbm2D(x * 0.009, z * 0.009, 4, 2.0, 0.5) * 11.5;
@@ -128,7 +128,7 @@ function initSplineSamples() {
     asphaltCurve.getPoint(t, tmp);
     asphaltCurve.getTangent(t, tan);
     const roadSlopeT = THREE.MathUtils.clamp((tmp.z + 465) / 718, 0, 1);
-    const roadElev = 124.0 * Math.pow(1.0 - roadSlopeT, 1.35) + 1.25;
+    const roadElev = 210.0 * Math.pow(1.0 - roadSlopeT, 1.38) + 1.25;
     asphaltSamples.push({ x: tmp.x, z: tmp.z, baseElevation: roadElev, tx: tan.x, tz: tan.z });
 
     // 2. Dirt Singletrack + Rollers + Jump Kickers
@@ -137,7 +137,7 @@ function initSplineSamples() {
     const dirtSlopeT = THREE.MathUtils.clamp((tmp.z + 465) / 718, 0, 1);
     const rollers = Math.sin(t * Math.PI * 46) * 0.55 * Math.sin(t * Math.PI);
     const kicker = evaluateKickerBoost(t);
-    const dirtElev = 124.0 * Math.pow(1.0 - dirtSlopeT, 1.35) + 1.15 + rollers + kicker;
+    const dirtElev = 210.0 * Math.pow(1.0 - dirtSlopeT, 1.38) + 1.15 + rollers + kicker;
     dirtSamples.push({ x: tmp.x, z: tmp.z, baseElevation: dirtElev, tx: tan.x, tz: tan.z });
 
     // 3. River Canyon (Carved below WATER_LEVEL = 0)

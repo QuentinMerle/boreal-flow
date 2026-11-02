@@ -167,6 +167,27 @@ export const HudOverlay: React.FC = () => {
         color: '#f4f1ea',
       }}
     >
+      {/* Subtle Tilt-Shift / Distance Horizon Depth-of-Field Blur (Zero WebGL GPU cost) */}
+      {!binocularsActive && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '28vh',
+            pointerEvents: 'none',
+            backdropFilter: 'blur(2.4px)',
+            WebkitBackdropFilter: 'blur(2.4px)',
+            maskImage:
+              'linear-gradient(to bottom, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.42) 45%, rgba(0,0,0,0) 100%)',
+            WebkitMaskImage:
+              'linear-gradient(to bottom, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.42) 45%, rgba(0,0,0,0) 100%)',
+            zIndex: 0,
+          }}
+        />
+      )}
+
       {/* Step 3.2: Binoculars Viewfinder Vignette & Acoustic Scanner */}
       {binocularsActive && (
         <div

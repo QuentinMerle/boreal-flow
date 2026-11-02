@@ -3,13 +3,14 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { mutablePhysics, useGameStore, CAMPFIRE_WORLD_POS } from '../state/gameStore';
 import { WILDLIFE_SPECIES } from '../world/parkActivitiesData';
+import { getTerrainHeightOnly } from '../world/terrainData';
 import { soundscape } from '../audio/soundscape';
 
 // Module-scope scratch vectors (ZERO allocations inside useFrame)
 const _desiredPos = new THREE.Vector3();
 const _desiredLookAt = new THREE.Vector3();
-const _smoothPos = new THREE.Vector3(0, 92, -232);
-const _smoothLookAt = new THREE.Vector3(0, 72, -200);
+const _smoothPos = new THREE.Vector3(-10, 218, -468);
+const _smoothLookAt = new THREE.Vector3(-10, 208, -435);
 const _velLead = new THREE.Vector3();
 const _forwardLead = new THREE.Vector3();
 const _binoDir = new THREE.Vector3();
@@ -100,16 +101,17 @@ export const DioramaCamera: React.FC = () => {
     }
     const contemplationFactor = Math.min(1.0, Math.max(0, (stillTimer.current - 1.0) / 1.5));
 
-    // Target FOV per mode & state
-    let targetFov = 40;
+    // Target FOV per mode & state (Dynamic speed-reactive FOV for exhilarating downhill flow!)
+    const speedRatio = THREE.MathUtils.clamp(speed / 32, 0, 1);
+    let targetFov = THREE.MathUtils.lerp(45, 58, speedRatio);
     if (p.cameraMode === 'COCKPIT') {
-      targetFov = 56;
+      targetFov = THREE.MathUtils.lerp(56, 66, speedRatio);
     } else if (p.specialState === 'CAMPFIRE') {
       targetFov = 32;
     } else if (p.specialState === 'ZIPLINE') {
-      targetFov = 46;
+      targetFov = 54;
     } else if (contemplationFactor > 0.05) {
-      targetFov = THREE.MathUtils.lerp(40, 36, contemplationFactor);
+      targetFov = THREE.MathUtils.lerp(45, 38, contemplationFactor);
     }
 
     if (Math.abs(cam.fov - targetFov) > 0.05) {
@@ -180,48 +182,60 @@ export const DioramaCamera: React.FC = () => {
       _desiredPos.set(pos.x, pos.y + 4.5, pos.z + 13.5);
       _desiredLookAt.set(pos.x, pos.y + 2.2, pos.z - 2.0);
     } else {
-      // --- STANDARD DIORAMA FOLLOW CAMERA + STATIONARY CONTEMPLATION ZOOM ---
-      const speedRatio = THREE.MathUtils.clamp(speed / 34, 0, 1);
-      const baseHeight = THREE.MathUtils.lerp(15.5, 22.5, speedRatio);
-      const baseBackDist = THREE.MathUtils.lerp(19.5, 26.5, speedRatio);
+      // --- DYNAMIC LOW-SLUNG CHASE / CINEMA DIORAMA CAMERA ---
+      // Lower height + closer follow distance frames the horizon, mountain drop & distant smoke plume!
+      const baseHeight = THREE.MathUtils.lerp(4.8, 6.8, speedRatio);
+      const baseBackDist = THREE.MathUtils.lerp(10.5, 14.2, speedRatio);
 
-      // Stationary contemplation pulls camera lower and closer for warm Firewatch feel
-      const camHeight = THREE.MathUtils.lerp(baseHeight, 7.8, contemplationFactor);
-      const camBackDist = THREE.MathUtils.lerp(baseBackDist, 10.2, contemplationFactor);
+      // Stationary contemplation pulls camera even lower to gaze up at the pine canopy & vista
+      const camHeight = THREE.MathUtils.lerp(baseHeight, 3.2, contemplationFactor);
+      const camBackDist = THREE.MathUtils.lerp(baseBackDist, 7.6, contemplationFactor);
 
-      _velLead.set(vel.x, vel.y * 0.35, vel.z).multiplyScalar(0.52 * (1 - contemplationFactor));
-      if (_velLead.lengthSq() > 144) {
-        _velLead.normalize().multiplyScalar(12);
-      }
+      // Hybrid chase vector: blends 65% behind player heading (-fwd) + 35% downhill (-Z)
+      // so carving hairpins feels super dynamic while keeping downhill awareness!
+      const chaseDirX = THREE.MathUtils.lerp(-fwd.x, 0, 0.35);
+      const chaseDirZ = THREE.MathUtils.lerp(-fwd.z, -1.0, 0.35);
+      const chaseLen = Math.hypot(chaseDirX, chaseDirZ) || 1.0;
+      const normChaseX = chaseDirX / chaseLen;
+      const normChaseZ = chaseDirZ / chaseLen;
 
-      _forwardLead.copy(fwd).multiplyScalar(3.5 * (1 - contemplationFactor));
+      // Subtle lateral swing on turns so the player carves across the frame
+      const lateralSwingX = -vel.x * 0.14 * (1 - contemplationFactor);
 
-      const swingX = (-fwd.x * 8.5 + vel.x * 0.18) * (1 - contemplationFactor * 0.5);
-      const swingZ = -Math.max(0.45, fwd.z) * camBackDist;
+      const rawCamX = pos.x + normChaseX * camBackDist + lateralSwingX;
+      const rawCamZ = pos.z + normChaseZ * camBackDist;
+      const groundUnderCam = getTerrainHeightOnly(rawCamX, rawCamZ);
+      // Ensure camera never clips into steep uphill terrain behind the player
+      const safeCamY = Math.max(pos.y + camHeight, groundUnderCam + 2.3);
 
-      _desiredPos.set(pos.x + swingX, pos.y + camHeight, pos.z + swingZ);
+      _desiredPos.set(rawCamX, safeCamY, rawCamZ);
+
+      // Look far ahead down the slope (14m to 22m ahead) so the valley vista & horizon fill the top of the frame
+      const lookAheadDist = THREE.MathUtils.lerp(13.0, 21.0, speedRatio) * (1 - contemplationFactor * 0.45);
+      _forwardLead.copy(fwd).multiplyScalar(lookAheadDist);
+      _velLead.set(vel.x, vel.y * 0.3, vel.z).multiplyScalar(0.38 * (1 - contemplationFactor));
 
       const lookTargetY = THREE.MathUtils.lerp(
-        pos.y + _velLead.y - 1.2,
-        pos.y + 0.95,
+        pos.y + _velLead.y + 0.65 - speedRatio * 1.4,
+        pos.y + 1.45,
         contemplationFactor
       );
 
       _desiredLookAt.set(
-        pos.x + _velLead.x + _forwardLead.x,
+        pos.x + _forwardLead.x + _velLead.x,
         lookTargetY,
-        pos.z + _velLead.z + _forwardLead.z
+        pos.z + _forwardLead.z + _velLead.z
       );
     }
 
-    const posDamp = contemplationFactor > 0.1 ? 3.2 : 4.5;
+    const posDamp = contemplationFactor > 0.1 ? 3.5 : 6.2;
     _smoothPos.x = THREE.MathUtils.damp(_smoothPos.x, _desiredPos.x, posDamp, dt);
-    _smoothPos.y = THREE.MathUtils.damp(_smoothPos.y, _desiredPos.y, 4.8, dt);
+    _smoothPos.y = THREE.MathUtils.damp(_smoothPos.y, _desiredPos.y, 5.8, dt);
     _smoothPos.z = THREE.MathUtils.damp(_smoothPos.z, _desiredPos.z, posDamp, dt);
 
-    _smoothLookAt.x = THREE.MathUtils.damp(_smoothLookAt.x, _desiredLookAt.x, 6.5, dt);
-    _smoothLookAt.y = THREE.MathUtils.damp(_smoothLookAt.y, _desiredLookAt.y, 5.5, dt);
-    _smoothLookAt.z = THREE.MathUtils.damp(_smoothLookAt.z, _desiredLookAt.z, 6.5, dt);
+    _smoothLookAt.x = THREE.MathUtils.damp(_smoothLookAt.x, _desiredLookAt.x, 8.5, dt);
+    _smoothLookAt.y = THREE.MathUtils.damp(_smoothLookAt.y, _desiredLookAt.y, 6.8, dt);
+    _smoothLookAt.z = THREE.MathUtils.damp(_smoothLookAt.z, _desiredLookAt.z, 8.5, dt);
 
     cam.position.copy(_smoothPos);
     cam.lookAt(_smoothLookAt);

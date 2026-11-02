@@ -416,7 +416,7 @@ class BorealSoundscape {
     const p = mutablePhysics;
     const now = this.ctx.currentTime;
     const speedRatio = THREE.MathUtils.clamp(p.speed / 32, 0, 1);
-    const altRatio = THREE.MathUtils.clamp(p.position.y / 125, 0, 1);
+    const altRatio = THREE.MathUtils.clamp(p.position.y / 210, 0, 1);
 
     if (p.poofCounter !== this.lastPoofCounter) {
       this.lastPoofCounter = p.poofCounter;

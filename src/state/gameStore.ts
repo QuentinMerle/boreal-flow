@@ -136,7 +136,7 @@ export interface MutablePhysicsState {
 }
 
 export const mutablePhysics: MutablePhysicsState = {
-  position: new THREE.Vector3(-10, 124, -455),
+  position: new THREE.Vector3(-10, 210, -455),
   velocity: new THREE.Vector3(0, 0, 0),
   forward: new THREE.Vector3(0, 0, 1),
   groundNormal: new THREE.Vector3(0, 1, 0),

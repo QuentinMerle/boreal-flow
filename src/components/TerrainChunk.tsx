@@ -26,6 +26,7 @@ const PALETTE = {
   SHOULDER_MOSS: new THREE.Color('#4b6b4c'),
   ROCK_LIGHT: new THREE.Color('#7a8288'),
   ROCK_DARK: new THREE.Color('#555d66'),
+  ALPINE_SNOW: new THREE.Color('#e8eff5'),
   SAND: new THREE.Color('#d2b48c'),
   LAKE_BED: new THREE.Color('#1c434d'),
 };
@@ -241,8 +242,8 @@ export const TerrainChunk: React.FC = () => {
       const sCode = surfaceGrid[iz * cols + ix];
       const jitter = simplex2D(cx * 0.05, cz * 0.05) * 0.025;
 
-      // Base meadow grass color with smooth altitude gradient
-      const altBlend = THREE.MathUtils.clamp((cy - 25) / 75, 0, 1);
+      // Base meadow grass color with smooth altitude gradient up to 210m alpine summit
+      const altBlend = THREE.MathUtils.clamp((cy - 25) / 110, 0, 1);
       tmpColor.copy(PALETTE.GRASS_MID).lerp(PALETTE.GRASS_WARM, altBlend);
 
       if (cy < WATER_LEVEL - 0.15) {
@@ -255,6 +256,16 @@ export const TerrainChunk: React.FC = () => {
         const rockBlend = THREE.MathUtils.clamp((0.82 - ny) / 0.22, 0, 1);
         const rockCol = ny < 0.65 ? PALETTE.ROCK_DARK : PALETTE.ROCK_LIGHT;
         tmpColor.lerp(rockCol, Math.max(sCode === 3 ? 0.85 : 0, rockBlend));
+      }
+
+      // High-altitude Canadian Rockies sub-alpine & snow-dusted summit ridge (> 150m)
+      if (cy > 148) {
+        const alpineRockT = THREE.MathUtils.smoothstep(cy, 148, 178);
+        tmpColor.lerp(PALETTE.ROCK_LIGHT, alpineRockT * 0.55);
+        if (cy > 172 && ny > 0.72) {
+          const snowT = THREE.MathUtils.smoothstep(cy + jitter * 180, 172, 202);
+          tmpColor.lerp(PALETTE.ALPINE_SNOW, snowT * 0.82);
+        }
       }
 
       tmpColor.offsetHSL(0, 0, jitter);

@@ -23,7 +23,7 @@ const PALETTE_KEYFRAMES: PaletteKeyframe[] = [
     hour: 0.0, // Deep Boreal Night
     sky: new THREE.Color('#0b1320'),
     fog: new THREE.Color('#0f1b2d'),
-    fogDensity: 0.0021,
+    fogDensity: 0.0028,
     sunColor: new THREE.Color('#7ca5d8'),
     sunIntensity: 0.65,
     hemiSky: new THREE.Color('#283e66'),
@@ -35,7 +35,7 @@ const PALETTE_KEYFRAMES: PaletteKeyframe[] = [
     hour: 6.2, // Misty Pink-Gold Dawn
     sky: new THREE.Color('#e8a598'),
     fog: new THREE.Color('#df9a8c'),
-    fogDensity: 0.0019,
+    fogDensity: 0.0027,
     sunColor: new THREE.Color('#ffaa70'),
     sunIntensity: 1.65,
     hemiSky: new THREE.Color('#ffd8be'),
@@ -47,7 +47,7 @@ const PALETTE_KEYFRAMES: PaletteKeyframe[] = [
     hour: 12.5, // Crisp Canadian High Noon
     sky: new THREE.Color('#8ecae6'),
     fog: new THREE.Color('#b5dce8'),
-    fogDensity: 0.0013,
+    fogDensity: 0.0019,
     sunColor: new THREE.Color('#fff9eb'),
     sunIntensity: 2.35,
     hemiSky: new THREE.Color('#e6f6ff'),
@@ -59,7 +59,7 @@ const PALETTE_KEYFRAMES: PaletteKeyframe[] = [
     hour: 18.0, // Firewatch Golden Hour (Lifted warm ground bounce for rich shadow contrast)
     sky: new THREE.Color('#e08e6d'),
     fog: new THREE.Color('#d98a6c'),
-    fogDensity: 0.0017,
+    fogDensity: 0.0025,
     sunColor: new THREE.Color('#ff9b54'),
     sunIntensity: 2.1,
     hemiSky: new THREE.Color('#ffd2ba'),
@@ -71,7 +71,7 @@ const PALETTE_KEYFRAMES: PaletteKeyframe[] = [
     hour: 21.5, // Deep Blue Dusk -> Night
     sky: new THREE.Color('#0b1320'),
     fog: new THREE.Color('#0f1b2d'),
-    fogDensity: 0.0021,
+    fogDensity: 0.0028,
     sunColor: new THREE.Color('#7ca5d8'),
     sunIntensity: 0.65,
     hemiSky: new THREE.Color('#283e66'),
@@ -83,7 +83,7 @@ const PALETTE_KEYFRAMES: PaletteKeyframe[] = [
     hour: 24.0, // Wrap to 0.0
     sky: new THREE.Color('#0b1320'),
     fog: new THREE.Color('#0f1b2d'),
-    fogDensity: 0.0021,
+    fogDensity: 0.0028,
     sunColor: new THREE.Color('#7ca5d8'),
     sunIntensity: 0.65,
     hemiSky: new THREE.Color('#283e66'),
