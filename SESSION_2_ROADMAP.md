@@ -130,6 +130,19 @@ flowchart TD
   - **Fallen Cedar Log Hurdles (`FALLEN_LOGS`):** 6 mossy cedar logs with golden lichen across the road and dirt trail requiring a well-timed Bunny-Hop / Ollie (`Space` / Gamepad `A`).
   - **Canoe Whitewater River Canyon:** Sub-$Y=0$ winding river channel (`riverCurve`) starting at the Mid-Mountain Put-In Dock ($X = 62, Z = -135$) and flowing into Mirror Lake with directional current (`getRiverCurrentVector`).
 
+### WP 3.5 — Physique & Gameplay 2.0 ("Anti-YOLO" / Courbe de Maîtrise)
+> [!IMPORTANT]
+> **Constat :** Le bac à sable est visuellement propre mais la conduite actuelle reste trop permissive ("YOLO" : traversée des arbres/rochers sans collision, accélération motorisée irréaliste en skate, virages trop faciles à haute vitesse).
+- [ ] **1. Collisions Arbres & Rochers ($O(1)$ Spatial Hash) :**
+  - Détection de proximité avec les pins et les rochers : impact franc (perte de vitesse + rebond + secousse caméra/haptique) ou léger *bail* (chute douce + remise sur piste) à haute vitesse.
+- [ ] **2. Courbe de Braquage Liée à la Vitesse (Inertie Réelle) :**
+  - À 70 km/h, impossible de tourner à 90° sans anticiper : le rayon de braquage s'élargit avec la vitesse, obligeant à **freiner (`S` / `LT`)** ou **déclencher un Powerslide (`Shift` / `B`)** pour enrouler les épingles.
+- [ ] **3. Propulsion Authentique par Discipline :**
+  - **Longboard :** Poussée au pied (*Foot-Push* rythmique avec la jambe qui pousse au sol) uniquement sous 25 km/h ; au-delà, seule la gravité de la pente, le *Carve Pumping* et la position *Aero Tuck* font gagner de la vitesse.
+  - **VTT :** Pédalage efficace en relance, mais vrai freinage d'urgence (V-brake / disque) nécessaire avant les virages serrés en forêt.
+- [ ] **4. Vraie Pénalité Hors-Piste :**
+  - Sortir du bitume en Longboard dans l'herbe haute ou la rocaille ralentit drastiquement la planche, récompensant la précision des trajectoires sur la route.
+
 ### WP 4 — Analog Gamepad Feel & Hybrid Camera
 - [x] **Bluetooth Gamepad Integration (`navigator.getGamepads`):**
   - Analog steering with deadzone (`0.12`).
