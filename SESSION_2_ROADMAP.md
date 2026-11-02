@@ -149,10 +149,12 @@ flowchart TD
   - HUD integration: Gamepad connection badge (`🎮 GAMEPAD READY`), View toggle button (`🎥 View (V)`), and updated controls guide.
 
 ### WP 5 — Zero-HUD Gameplay Loop ("Le But sans le Stress")
-- [ ] **The Boreal Triathlon:**
-  - Summit trailhead departure to lake dock arrival.
-  - Visible diegetic landmark: Vertical column of white campfire smoke rising above the forest canopy.
-  - Complete freedom of route (mix and switch between Longboard, VTT, and Canoe).
+- [x] **The Boreal Triathlon & Diegetic Smoke Plume (Completed ✅):**
+  - Summit trailhead departure arch ($Z = -188$) to lake arrival arch ($Z = 106$).
+  - Visible diegetic landmark: 50m vertical column of white campfire smoke rising above the forest canopy with natural wind sway and golden hour tint.
+  - Complete freedom of route: automatic multi-sport chaining tracking (`Longboard`, `Bike`, `Canoe`).
+  - Automated run timing and tier badges: 🍁 **Feuille d'Érable** (Gold $< 50\text{s}$), 🪶 **Plume de Geai** (Silver $< 75\text{s}$), 🦌 **Bois d'Orignal** (Bronze).
+  - Triumphant pentatonic finish fanfare, gamepad haptic celebration, personal best persistence in `localStorage`.
 - [ ] **Scarf Ghost System ("Fantôme d'Écharpe"):**
   - Pre-allocated `Float32Array(900 * 5)` telemetry recorder (recording position, yaw, and mode at 5Hz).
   - Persistent storage in `localStorage` for personal best replay.
