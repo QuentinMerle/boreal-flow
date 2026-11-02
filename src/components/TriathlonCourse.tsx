@@ -7,16 +7,16 @@ import {
   CAMPFIRE_WORLD_POS,
   BadgeType,
 } from '../state/gameStore';
-import { getTerrainHeightOnly, WATER_LEVEL } from '../world/terrainData';
+import { getTerrainHeightOnly } from '../world/terrainData';
 import { soundscape } from '../audio/soundscape';
 
-const SMOKE_PUFF_COUNT = 36;
+const SMOKE_PUFF_COUNT = 42;
 const _smokeDummy = new THREE.Object3D();
 
 /**
- * Step 3.1 & 3.2: Boreal Triathlon & Diegetic Zero-HUD Navigation
- * 1. 50m Rising Campfire Smoke Plume: Visible across the entire mountain range.
- * 2. Diegetic Summit Start Line & Lakeside Finish Gate.
+ * Step 3.1 & 3.2: Boreal Triathlon & Diegetic Zero-HUD Navigation (1,000m Canyon Map)
+ * 1. 68m Rising Campfire Smoke Plume: Visible across the entire 1,000m mountain range.
+ * 2. Diegetic Summit Start Line (Z=-420) & Lakeside Finish Gate (Z=+230).
  * 3. Automatic Run Tracking & Finish Badge Evaluation (Maple Leaf, Jay Feather, Moose Antlers).
  */
 export const TriathlonCourse: React.FC = () => {
@@ -24,11 +24,13 @@ export const TriathlonCourse: React.FC = () => {
   const smokeMatRef = useRef<THREE.MeshStandardMaterial>(null);
 
   // Summit Start Marker Coordinates
-  const summitY = getTerrainHeightOnly(-10, -188);
+  const startX = -13;
+  const startZ = -420;
+  const summitY = getTerrainHeightOnly(startX, startZ);
 
   // Lakeside Finish Gate Coordinates
-  const finishX = -6.5;
-  const finishZ = 106.0;
+  const finishX = -15.0;
+  const finishZ = 230.0;
   const finishY = getTerrainHeightOnly(finishX, finishZ);
 
   // Pre-calculate randomized smoke offsets
@@ -37,9 +39,9 @@ export const TriathlonCourse: React.FC = () => {
       phase: i / SMOKE_PUFF_COUNT,
       wobbleSpeedX: 0.8 + ((i * 17) % 7) * 0.1,
       wobbleSpeedZ: 0.7 + ((i * 13) % 9) * 0.1,
-      wobbleAmpX: 0.7 + ((i * 23) % 5) * 0.25,
-      wobbleAmpZ: 0.6 + ((i * 19) % 6) * 0.22,
-      baseScale: 0.6 + ((i * 11) % 4) * 0.15,
+      wobbleAmpX: 0.75 + ((i * 23) % 5) * 0.25,
+      wobbleAmpZ: 0.65 + ((i * 19) % 6) * 0.22,
+      baseScale: 0.65 + ((i * 11) % 4) * 0.15,
     }));
   }, []);
 
@@ -54,24 +56,24 @@ export const TriathlonCourse: React.FC = () => {
       const campX = CAMPFIRE_WORLD_POS.x;
       const campY = CAMPFIRE_WORLD_POS.y;
       const campZ = CAMPFIRE_WORLD_POS.z;
-      const plumeHeight = 52.0;
+      const plumeHeight = 68.0;
 
       for (let i = 0; i < SMOKE_PUFF_COUNT; i++) {
         const off = smokeOffsets[i];
-        const progress = (t * 0.095 + off.phase) % 1.0;
+        const progress = (t * 0.085 + off.phase) % 1.0;
 
         // Altitude: curves upward accelerating slightly with hot air draft
         const currY = campY + 0.4 + Math.pow(progress, 0.88) * plumeHeight;
 
         // Wind drift S-curve
-        const windX = Math.sin(t * off.wobbleSpeedX + currY * 0.12) * off.wobbleAmpX * (1 + progress * 3.5);
-        const windZ = Math.cos(t * off.wobbleSpeedZ + currY * 0.09) * off.wobbleAmpZ * (1 + progress * 2.8);
-        const driftLateral = progress * 6.5; // slight prevailing easterly mountain draft
+        const windX = Math.sin(t * off.wobbleSpeedX + currY * 0.11) * off.wobbleAmpX * (1 + progress * 3.8);
+        const windZ = Math.cos(t * off.wobbleSpeedZ + currY * 0.09) * off.wobbleAmpZ * (1 + progress * 3.0);
+        const driftLateral = progress * 7.5;
 
         _smokeDummy.position.set(campX + windX + driftLateral, currY, campZ + windZ);
 
         // Scale expands as smoke billows into the air
-        const puffScale = THREE.MathUtils.lerp(0.45, 4.4, progress) * off.baseScale;
+        const puffScale = THREE.MathUtils.lerp(0.5, 4.8, progress) * off.baseScale;
         _smokeDummy.scale.set(puffScale, puffScale * 0.88, puffScale);
         _smokeDummy.rotation.set(currY * 0.2, t * 0.15 + i, 0);
         _smokeDummy.updateMatrix();
@@ -95,11 +97,9 @@ export const TriathlonCourse: React.FC = () => {
       }
     }
 
-    // --- 2. BOREAL TRIATHLON LOGIC & RUN STATE MACHINE ---
-    // Start Trigger: Player leaves Summit zone heading downhill
+    // --- 2. BOREAL TRIATHLON LOGIC & RUN STATE MACHINE (1,000m Course) ---
     if (p.triathlonStatus === 'IDLE') {
-      const inSummitZone = p.position.z < -195;
-      const crossedStartLine = p.position.z >= -188 && p.position.z <= -165;
+      const crossedStartLine = p.position.z >= -425 && p.position.z <= -385;
       const isMovingDownhill = p.velocity.z > 1.2 || (p.speed > 2.0 && p.forward.z > 0.4);
 
       if (crossedStartLine && isMovingDownhill && p.specialState === 'NONE') {
@@ -116,18 +116,18 @@ export const TriathlonCourse: React.FC = () => {
 
       // Finish Trigger: Player enters Lakeside Camp or Canoe Dock perimeter
       const distToFire = Math.hypot(p.position.x - CAMPFIRE_WORLD_POS.x, p.position.z - CAMPFIRE_WORLD_POS.z);
-      const distToDock = Math.hypot(p.position.x - 2, p.position.z - 126);
+      const distToDock = Math.hypot(p.position.x - 2, p.position.z - 252);
       const distToFinishGate = Math.hypot(p.position.x - finishX, p.position.z - finishZ);
 
-      const reachedLakeside = distToFire < 14.5 || distToDock < 13.0 || distToFinishGate < 8.5;
+      const reachedLakeside = distToFire < 15.0 || distToDock < 14.0 || distToFinishGate < 9.5;
 
-      if (reachedLakeside && p.position.z > 95) {
+      if (reachedLakeside && p.position.z > 218) {
         const finalTime = p.triathlonTimer;
         let badge: BadgeType = 'MOOSE';
-        if (finalTime <= 50.0) {
-          badge = 'MAPLE'; // Gold tier (< 50s)
-        } else if (finalTime <= 75.0) {
-          badge = 'JAY'; // Silver tier (< 1m15s)
+        if (finalTime <= 72.0) {
+          badge = 'MAPLE'; // Gold tier (<= 1m12s on 1,000m course)
+        } else if (finalTime <= 105.0) {
+          badge = 'JAY'; // Silver tier (<= 1m45s)
         }
 
         useGameStore.getState().finishTriathlon(finalTime, badge);
@@ -150,7 +150,7 @@ export const TriathlonCourse: React.FC = () => {
 
   return (
     <group>
-      {/* 50m Rising Low-Poly Campfire Smoke Plume */}
+      {/* 68m Rising Low-Poly Campfire Smoke Plume */}
       <instancedMesh
         ref={smokeMeshRef}
         args={[undefined, undefined, SMOKE_PUFF_COUNT]}
@@ -169,8 +169,8 @@ export const TriathlonCourse: React.FC = () => {
         />
       </instancedMesh>
 
-      {/* Summit Trailhead Start Arch (at z = -188) */}
-      <group position={[-10, summitY, -188]}>
+      {/* Summit Trailhead Start Arch (at z = -420) */}
+      <group position={[startX, summitY, startZ]}>
         {/* Left Post */}
         <mesh castShadow receiveShadow position={[-3.2, 2.1, 0]}>
           <cylinderGeometry args={[0.22, 0.24, 4.4, 7]} />
@@ -184,16 +184,16 @@ export const TriathlonCourse: React.FC = () => {
         {/* Horizontal Wooden Lintel */}
         <mesh castShadow receiveShadow position={[0, 4.0, 0]}>
           <boxGeometry args={[7.2, 0.45, 0.35]} />
-          <meshStandardMaterial color="#8b5a2b" flatShading roughness={0.85} />
+          <meshStandardMaterial color="#8b5a2b" flatShading roughness={0.88} />
         </mesh>
         {/* Start Signboard */}
         <mesh position={[0, 3.4, 0.12]}>
           <boxGeometry args={[4.8, 0.75, 0.1]} />
-          <meshStandardMaterial color="#eb5e46" flatShading roughness={0.8} />
+          <meshStandardMaterial color="#eb5e46" flatShading roughness={0.85} />
         </mesh>
       </group>
 
-      {/* Lakeside Finish Arch (at z = 106) */}
+      {/* Lakeside Finish Arch (at z = +230) */}
       <group position={[finishX, finishY, finishZ]} rotation={[0, -0.22, 0]}>
         {/* Left Post */}
         <mesh castShadow receiveShadow position={[-3.0, 2.2, 0]}>
@@ -208,12 +208,12 @@ export const TriathlonCourse: React.FC = () => {
         {/* Crossbeam */}
         <mesh castShadow receiveShadow position={[0, 4.2, 0]}>
           <boxGeometry args={[6.8, 0.5, 0.38]} />
-          <meshStandardMaterial color="#7a4b27" flatShading roughness={0.85} />
+          <meshStandardMaterial color="#7a4b27" flatShading roughness={0.88} />
         </mesh>
         {/* Finish Banner */}
         <mesh position={[0, 3.5, 0.14]}>
           <boxGeometry args={[5.2, 0.85, 0.1]} />
-          <meshStandardMaterial color="#ffd166" flatShading roughness={0.7} />
+          <meshStandardMaterial color="#ffd166" flatShading roughness={0.8} />
         </mesh>
         {/* Hanging Lantern */}
         <mesh position={[0, 2.8, 0]}>

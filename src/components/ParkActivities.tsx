@@ -28,16 +28,16 @@ export const ParkActivities: React.FC = () => {
   const wildlifeRefs = useRef<(THREE.Group | null)[]>([]);
   const ringRefs = useRef<(THREE.Mesh | null)[]>([]);
 
-  // Build Zipline Tube Geometry along the catenary curve
+  // Build Zipline Tube Geometry along the 700m catenary curve
   const ziplineGeometry = useMemo(() => {
     const pts: THREE.Vector3[] = [];
-    for (let i = 0; i <= 32; i++) {
+    for (let i = 0; i <= 48; i++) {
       const p = new THREE.Vector3();
-      getZiplinePoint(i / 32, p);
+      getZiplinePoint(i / 48, p);
       pts.push(p);
     }
     const curve = new THREE.CatmullRomCurve3(pts);
-    return new THREE.TubeGeometry(curve, 36, 0.045, 6, false);
+    return new THREE.TubeGeometry(curve, 64, 0.045, 6, false);
   }, []);
 
   // Colorful Bouldering Holds on the South Cliff/Tower Crag

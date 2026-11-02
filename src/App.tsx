@@ -15,16 +15,16 @@ export const App: React.FC = () => {
       <Canvas
         shadows
         dpr={[1, 2]}
-        camera={{ fov: 40, near: 0.5, far: 650, position: [0, 92, -235] }}
+        camera={{ fov: 40, near: 0.5, far: 1150, position: [-10, 142, -480] }}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
       >
         {/* Step 2.2: Dynamic 4-Palette Day/Night Cycle, Orbiting Sun/Moon & Starfield */}
         <DayNightAtmosphere />
 
-        {/* Step 1.1 & 2.1: 500m Mountain Slope, Splines, Wind-Swaying Foliage & Night Base Camp */}
+        {/* Chantier A & B: 1,000m Boreal Canyon, Multi-Spline Stamping, Whitewater River & Foliage */}
         <TerrainChunk />
 
-        {/* Step 3.1 & 3.2: 50m Rising Campfire Smoke Plume, Arches & Boreal Triathlon Engine */}
+        {/* Step 3.1 & 3.2: 68m Rising Campfire Smoke Plume, Arches & Boreal Triathlon Engine */}
         <TriathlonCourse />
 
         {/* Step 3.1, 3.2 & 3.3: Racks, Wildlife Emitters, Firewatch Tower, Bouldering Crag & Zipline */}

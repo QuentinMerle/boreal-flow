@@ -12,7 +12,15 @@ import {
   triggerPoofEffect,
   triggerPlayerEmote,
 } from '../state/gameStore';
-import { sampleTerrain, WATER_LEVEL, TERRAIN_WIDTH, TERRAIN_LENGTH, getTerrainHeightOnly } from '../world/terrainData';
+import {
+  sampleTerrain,
+  WATER_LEVEL,
+  TERRAIN_WIDTH,
+  TERRAIN_LENGTH,
+  getTerrainHeightOnly,
+  FALLEN_LOGS,
+  getRiverCurrentVector,
+} from '../world/terrainData';
 import {
   TRANSITION_STATIONS,
   WILDLIFE_SPECIES,
@@ -72,8 +80,12 @@ export const ArcadeController: React.FC = () => {
 
   const rootGroupRef = useRef<THREE.Group>(null);
   const visualTiltRef = useRef<THREE.Group>(null);
+  const blobShadowRef = useRef<THREE.Mesh>(null);
   const paddleRef = useRef<THREE.Group>(null);
   const bikeSteerRef = useRef<THREE.Group>(null);
+  const bikeFrontWheelRef = useRef<THREE.Group>(null);
+  const bikeRearWheelRef = useRef<THREE.Group>(null);
+  const longboardWheelsRef = useRef<(THREE.Mesh | null)[]>([]);
   const headlampRef = useRef<THREE.SpotLight>(null);
   const headlampTargetRef = useRef<THREE.Object3D>(null);
   const headlampLensMatRef = useRef<THREE.MeshStandardMaterial>(null);
@@ -120,6 +132,9 @@ export const ArcadeController: React.FC = () => {
     hopCooldown: 0,
     walkBob: 0,
     pedalPhase: 0,
+    wheelAngle: 0,
+    prevGroundY: 124,
+    prevClimbVel: 0,
     headYaw: 0,
     headPitch: 0,
     headRoll: 0,
@@ -129,22 +144,22 @@ export const ArcadeController: React.FC = () => {
     soundscape.setMuted(audioMuted);
   }, [audioMuted]);
 
-  // Spawn / Teleport logic
+  // Spawn / Teleport logic (1,000m Boreal Canyon coordinates)
   useEffect(() => {
     const p = mutablePhysics;
     p.stamina = 1.0;
 
     if (spawnTarget === 'SUMMIT_ROAD') {
       p.specialState = 'NONE';
-      p.position.set(-10, 74, -212);
-      p.yaw = -0.15;
+      p.position.set(-10, 124, -455);
+      p.yaw = -0.08;
     } else if (spawnTarget === 'SUMMIT_TRAIL') {
       p.specialState = 'NONE';
-      p.position.set(16, 74, -212);
-      p.yaw = 0.25;
+      p.position.set(16, 124, -455);
+      p.yaw = 0.22;
     } else if (spawnTarget === 'LAKE_SHORE') {
       p.specialState = 'NONE';
-      p.position.set(2, WATER_LEVEL + 0.5, 136);
+      p.position.set(2, WATER_LEVEL + 0.5, 256);
       p.yaw = 0.0;
     } else if (spawnTarget === 'FIREWATCH_TOWER') {
       p.specialState = 'NONE';
@@ -161,6 +176,8 @@ export const ArcadeController: React.FC = () => {
       const t = sampleTerrain(p.position.x, p.position.z, _groundNormal);
       p.position.y = Math.max(t.height, WATER_LEVEL) + 0.5;
     }
+    springState.current.prevGroundY = p.position.y;
+    springState.current.prevClimbVel = 0;
     p.velocity.set(0, 0, 0);
     p.speed = 0;
     p.lateralSpeed = 0;
@@ -484,7 +501,7 @@ export const ArcadeController: React.FC = () => {
     } else if (distToFire < 6.5) {
       promptText = '🔥 [E] Sit by the Cozy Campfire';
     } else if (p.position.distanceTo(ZIPLINE_START) < 6.5) {
-      promptText = '⚡ [E] Ride 340m Zipline to Lakeside Camp!';
+      promptText = '⚡ [E] Ride 700m Zipline to Lakeside Camp!';
     } else {
       const distToClimb = Math.hypot(
         p.position.x - CLIMB_ZONE.centerX,
@@ -633,7 +650,11 @@ export const ArcadeController: React.FC = () => {
 
       // 2. Steering & Heading Vectors (Snappy turn response at all speeds!)
       const wantsDrift =
-        (mode === 'LONGBOARD' && (wantsHop || inp.shiftDrift || padDriftBtn || padBrake > 0.2)) ||
+        (mode === 'LONGBOARD' &&
+          (inp.shiftDrift ||
+            padDriftBtn ||
+            padBrake > 0.2 ||
+            (wantsHop && Math.abs(steerInput) >= 0.28))) ||
         (mode === 'BIKE' && (inp.shiftDrift || padDriftBtn || isBraking) && Math.abs(steerInput) > 0.1);
 
       p.isDrifting = p.isGrounded && wantsDrift && p.speed > 5.5;
@@ -678,10 +699,11 @@ export const ArcadeController: React.FC = () => {
         if (steerDelta > 0.5 && p.isGrounded && forwardVel > 2.5 && forwardVel < preset.maxSpeed) {
           forwardVel += 1.15;
         }
-        if (wantsHop && p.isGrounded && p.speed <= 6.5 && sp.hopCooldown <= 0) {
+        if (wantsHop && !p.isDrifting && p.isGrounded && sp.hopCooldown <= 0) {
           p.velocity.y = preset.hopImpulse;
           p.isGrounded = false;
           sp.hopCooldown = 0.45;
+          sp.bounceVel = 4.5;
           soundscape.triggerHopSound();
           triggerHaptic(pad, 80, 0.4, 0.3);
         }
@@ -719,7 +741,7 @@ export const ArcadeController: React.FC = () => {
         }
 
         if (isOnWater) {
-          _riverCurrent.set(-1.2, 0, 1.8);
+          getRiverCurrentVector(p.position.x, p.position.z, _riverCurrent);
           forwardVel += _riverCurrent.dot(_forward) * dt;
           lateralVel += _riverCurrent.dot(_right) * dt;
         }
@@ -777,12 +799,42 @@ export const ArcadeController: React.FC = () => {
       lateralVel = THREE.MathUtils.damp(lateralVel, 0, activeGrip, dt);
       forwardVel = THREE.MathUtils.clamp(forwardVel, -6, preset.maxSpeed * 1.15);
 
+      // 6b. Fallen Log Hurdles (Bunny-Hop / Ollie Gameplay)
+      for (let i = 0; i < FALLEN_LOGS.length; i++) {
+        const log = FALLEN_LOGS[i];
+        const dx = p.position.x - log.position.x;
+        const dz = p.position.z - log.position.z;
+        const distSq = dx * dx + dz * dz;
+        const halfLen = log.length * 0.52;
+        if (distSq < halfLen * halfLen) {
+          // Local coordinates relative to log axis (yaw rotates around Y)
+          const cosY = Math.cos(log.yaw);
+          const sinY = Math.sin(log.yaw);
+          const alongDist = Math.abs(dx * cosY - dz * sinY);
+          const perpDist = Math.abs(dx * sinY + dz * cosY);
+          if (alongDist < halfLen && perpDist < log.radius + 0.45) {
+            const clearanceY = log.position.y + log.radius * 0.72;
+            if (p.position.y < clearanceY && sp.hopCooldown <= 0.15) {
+              // Player hit the log without hopping high enough -> tactile stumble & bounce!
+              p.velocity.y = 4.4;
+              p.isGrounded = false;
+              forwardVel *= 0.42;
+              sp.bounceVel = -6.5;
+              sp.hopCooldown = 0.42;
+              soundscape.triggerHopSound();
+              triggerHaptic(pad, 150, 0.85, 0.65);
+            }
+          }
+        }
+      }
+
       p.velocity.x = _forward.x * forwardVel + _right.x * lateralVel;
       p.velocity.z = _forward.z * forwardVel + _right.z * lateralVel;
       p.speed = Math.hypot(p.velocity.x, p.velocity.z);
       p.lateralSpeed = lateralVel;
 
-      // 7. Vertical Integration & Ground Snapping
+      // 7. Vertical Integration, Kicker Launch & Ground Snapping
+      const wasGroundedBeforeStep = p.isGrounded;
       p.velocity.y -= 24.0 * dt;
       p.position.x += p.velocity.x * dt;
       p.position.y += p.velocity.y * dt;
@@ -809,7 +861,24 @@ export const ArcadeController: React.FC = () => {
         targetFloorY = TOWER_BASE_Y + TOWER_DECK_HEIGHT + 0.22;
       }
 
-      if (p.position.y <= targetFloorY) {
+      // Slope / Kicker Crest Launch Physics:
+      // If climbing a jump kicker at speed and cresting the lip (vertical ground rate drops sharply), launch airborne!
+      const currentClimbVel = (targetFloorY - sp.prevGroundY) / Math.max(0.001, dt);
+      if (
+        wasGroundedBeforeStep &&
+        !newOnWater &&
+        (mode === 'BIKE' || mode === 'LONGBOARD') &&
+        p.speed > 9.0 &&
+        sp.prevClimbVel > 2.2 &&
+        currentClimbVel < sp.prevClimbVel - 2.0
+      ) {
+        p.velocity.y = Math.min(11.5, Math.max(4.8, sp.prevClimbVel * 1.15));
+        p.position.y = targetFloorY + 0.12;
+        p.isGrounded = false;
+        sp.bounceVel = 5.0;
+        soundscape.triggerHopSound();
+        triggerHaptic(pad, 100, 0.5, 0.4);
+      } else if (p.position.y <= targetFloorY) {
         if (!p.isGrounded && p.velocity.y < -3.0) {
           sp.bounceVel = p.velocity.y * 0.35;
           triggerHaptic(pad, 130, Math.min(1, Math.abs(p.velocity.y) / 11), 0.5);
@@ -818,6 +887,9 @@ export const ArcadeController: React.FC = () => {
         p.velocity.y = 0;
         p.isGrounded = true;
       }
+
+      sp.prevClimbVel = THREE.MathUtils.lerp(sp.prevClimbVel, currentClimbVel, 0.5);
+      sp.prevGroundY = targetFloorY;
     }
 
     // --- 8. EXPRESSIVE ARTICULATED CHARACTER RIG & PROPER RIGHT-HANDED BASIS ROTATION ---
@@ -1054,7 +1126,8 @@ export const ArcadeController: React.FC = () => {
       }
     }
 
-    // Steer Bike Handlebars visually
+    // Steer Bike Handlebars & Spin Wheels visually (Chantier B)
+    sp.wheelAngle += (p.speed / 0.32) * dt;
     if (bikeSteerRef.current && mode === 'BIKE') {
       bikeSteerRef.current.rotation.y = THREE.MathUtils.damp(
         bikeSteerRef.current.rotation.y,
@@ -1062,6 +1135,39 @@ export const ArcadeController: React.FC = () => {
         10,
         dt
       );
+    }
+    if (bikeFrontWheelRef.current && bikeRearWheelRef.current && mode === 'BIKE') {
+      bikeFrontWheelRef.current.rotation.x = sp.wheelAngle;
+      bikeRearWheelRef.current.rotation.x = sp.wheelAngle;
+    }
+    if (mode === 'LONGBOARD') {
+      for (let w = 0; w < 4; w++) {
+        const wheelMesh = longboardWheelsRef.current[w];
+        if (wheelMesh) {
+          wheelMesh.rotation.y = -sp.wheelAngle * 2.8;
+        }
+      }
+    }
+
+    // Update Contact Blob Shadow under Player/Vehicle (Chantier B)
+    if (blobShadowRef.current) {
+      const airHeight = Math.max(0, p.position.y - sp.prevGroundY);
+      const shadowScaleXZ = THREE.MathUtils.clamp(1.0 - airHeight * 0.14, 0.35, 1.0);
+      const isLongVehicle =
+        p.specialState === 'NONE' && (mode === 'BIKE' || mode === 'LONGBOARD' || mode === 'CANOE');
+      const lengthScale = isLongVehicle ? 1.85 : 1.0;
+      const widthScale = mode === 'CANOE' && p.specialState === 'NONE' ? 1.15 : 0.78;
+      blobShadowRef.current.scale.set(
+        widthScale * shadowScaleXZ,
+        lengthScale * shadowScaleXZ,
+        1
+      );
+      blobShadowRef.current.position.y = Math.max(-2.5, -airHeight + 0.035);
+      const shadowMat = blobShadowRef.current.material as THREE.MeshBasicMaterial;
+      shadowMat.opacity =
+        p.specialState === 'ZIPLINE' || p.specialState === 'CLIMBING'
+          ? 0.0
+          : THREE.MathUtils.clamp((1.0 - airHeight * 0.22) * 0.36, 0.06, 0.36);
     }
 
     if (paddleRef.current && mode === 'CANOE') {
@@ -1094,6 +1200,22 @@ export const ArcadeController: React.FC = () => {
 
   return (
     <group ref={rootGroupRef}>
+      {/* Ground Contact Blob Shadow (Chantier B: prevents floating wheels look) */}
+      <mesh
+        ref={blobShadowRef}
+        position={[0, 0.035, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        renderOrder={1}
+      >
+        <circleGeometry args={[0.72, 16]} />
+        <meshBasicMaterial
+          color="#0b131e"
+          transparent
+          opacity={0.35}
+          depthWrite={false}
+        />
+      </mesh>
+
       <group ref={visualTiltRef}>
         <ExplorerCharacter
           mode={mode}
@@ -1131,8 +1253,16 @@ export const ArcadeController: React.FC = () => {
         />
         <object3D ref={headlampTargetRef} position={[0, -0.35, 14]} />
 
-        {showVehicles && mode === 'LONGBOARD' && <LongboardMesh />}
-        {showVehicles && mode === 'BIKE' && <MountainBikeMesh steerRef={bikeSteerRef} />}
+        {showVehicles && mode === 'LONGBOARD' && (
+          <LongboardMesh wheelsRef={longboardWheelsRef} />
+        )}
+        {showVehicles && mode === 'BIKE' && (
+          <MountainBikeMesh
+            steerRef={bikeSteerRef}
+            frontWheelRef={bikeFrontWheelRef}
+            rearWheelRef={bikeRearWheelRef}
+          />
+        )}
         {showVehicles && mode === 'CANOE' && <CanoeMesh paddleRef={paddleRef} />}
       </group>
     </group>
@@ -1161,51 +1291,51 @@ const ExplorerCharacter: React.FC<{
       <group ref={joints.leftLeg} position={[-0.14, 0.62, 0]}>
         <mesh castShadow position={[0, -0.25, 0]}>
           <boxGeometry args={[0.16, 0.52, 0.18]} />
-          <meshStandardMaterial color="#2b3a4a" flatShading />
+          <meshStandardMaterial color="#2b3a4a" flatShading roughness={0.9} />
         </mesh>
       </group>
       <group ref={joints.rightLeg} position={[0.14, 0.62, 0]}>
         <mesh castShadow position={[0, -0.25, 0]}>
           <boxGeometry args={[0.16, 0.52, 0.18]} />
-          <meshStandardMaterial color="#2b3a4a" flatShading />
+          <meshStandardMaterial color="#2b3a4a" flatShading roughness={0.9} />
         </mesh>
       </group>
 
       <group ref={joints.torso} position={[0, 0.62, 0]}>
         <mesh castShadow position={[0, 0.28, 0]}>
           <boxGeometry args={[0.46, 0.58, 0.28]} />
-          <meshStandardMaterial color="#d94e34" flatShading />
+          <meshStandardMaterial color="#d94e34" flatShading roughness={0.88} />
         </mesh>
 
         <group ref={joints.leftArm} position={[-0.31, 0.5, 0]}>
           <mesh castShadow position={[0, -0.22, 0]}>
             <boxGeometry args={[0.14, 0.48, 0.14]} />
-            <meshStandardMaterial color="#e76f51" flatShading />
+            <meshStandardMaterial color="#e76f51" flatShading roughness={0.88} />
           </mesh>
           <mesh castShadow position={[0, -0.46, 0]}>
             <dodecahedronGeometry args={[0.08, 0]} />
-            <meshStandardMaterial color="#2b3a4a" flatShading />
+            <meshStandardMaterial color="#2b3a4a" flatShading roughness={0.9} />
           </mesh>
         </group>
 
         <group ref={joints.rightArm} position={[0.31, 0.5, 0]}>
           <mesh castShadow position={[0, -0.22, 0]}>
             <boxGeometry args={[0.14, 0.48, 0.14]} />
-            <meshStandardMaterial color="#e76f51" flatShading />
+            <meshStandardMaterial color="#e76f51" flatShading roughness={0.88} />
           </mesh>
           <mesh castShadow position={[0, -0.46, 0]}>
             <dodecahedronGeometry args={[0.08, 0]} />
-            <meshStandardMaterial color="#2b3a4a" flatShading />
+            <meshStandardMaterial color="#2b3a4a" flatShading roughness={0.9} />
           </mesh>
         </group>
 
         <mesh castShadow position={[0, 0.3, -0.22]}>
           <boxGeometry args={[0.38, 0.48, 0.22]} />
-          <meshStandardMaterial color="#e09f3e" flatShading />
+          <meshStandardMaterial color="#e09f3e" flatShading roughness={0.9} />
         </mesh>
         <mesh castShadow position={[0, 0.6, -0.22]} rotation={[0, 0, Math.PI / 2]}>
           <cylinderGeometry args={[0.09, 0.09, 0.42, 6]} />
-          <meshStandardMaterial color="#386641" flatShading />
+          <meshStandardMaterial color="#386641" flatShading roughness={0.9} />
         </mesh>
 
         <mesh
@@ -1215,25 +1345,25 @@ const ExplorerCharacter: React.FC<{
           rotation={[0.45, 0, 0]}
         >
           <boxGeometry args={[0.18, 0.06, 0.62]} />
-          <meshStandardMaterial color="#ffd166" flatShading />
+          <meshStandardMaterial color="#ffd166" flatShading roughness={0.88} />
         </mesh>
 
         <group ref={joints.head} position={[0, 0.6, 0]}>
           <mesh castShadow position={[0, 0.14, 0]}>
             <dodecahedronGeometry args={[0.2, 0]} />
-            <meshStandardMaterial color="#f3d5b5" flatShading />
+            <meshStandardMaterial color="#f3d5b5" flatShading roughness={0.88} />
           </mesh>
           <mesh castShadow position={[0, 0.16, 0.16]}>
             <boxGeometry args={[0.28, 0.1, 0.08]} />
-            <meshStandardMaterial color="#1d3557" flatShading roughness={0.2} />
+            <meshStandardMaterial color="#1d3557" flatShading roughness={0.35} />
           </mesh>
           <mesh castShadow position={[0, 0.26, -0.02]}>
             <coneGeometry args={[0.21, 0.28, 6]} />
-            <meshStandardMaterial color="#f4a261" flatShading />
+            <meshStandardMaterial color="#f4a261" flatShading roughness={0.9} />
           </mesh>
           <mesh castShadow position={[0, 0.42, -0.04]}>
             <dodecahedronGeometry args={[0.065, 0]} />
-            <meshStandardMaterial color="#fffbeb" flatShading />
+            <meshStandardMaterial color="#fffbeb" flatShading roughness={0.92} />
           </mesh>
           <mesh position={[0, 0.25, 0.17]}>
             <boxGeometry args={[0.12, 0.07, 0.07]} />
@@ -1251,15 +1381,17 @@ const ExplorerCharacter: React.FC<{
   );
 };
 
-const LongboardMesh: React.FC = () => (
+const LongboardMesh: React.FC<{
+  wheelsRef: React.MutableRefObject<(THREE.Mesh | null)[]>;
+}> = ({ wheelsRef }) => (
   <group position={[0, 0.12, 0]}>
     <mesh castShadow receiveShadow>
       <boxGeometry args={[0.44, 0.06, 1.65]} />
-      <meshStandardMaterial color="#e09f3e" flatShading />
+      <meshStandardMaterial color="#e09f3e" flatShading roughness={0.88} />
     </mesh>
     <mesh position={[0, 0.032, 0]}>
       <boxGeometry args={[0.14, 0.01, 1.55]} />
-      <meshStandardMaterial color="#d94e34" flatShading />
+      <meshStandardMaterial color="#d94e34" flatShading roughness={0.9} />
     </mesh>
     {[
       [-0.26, -0.04, 0.58],
@@ -1267,43 +1399,80 @@ const LongboardMesh: React.FC = () => (
       [-0.26, -0.04, -0.58],
       [0.26, -0.04, -0.58],
     ].map(([x, y, z], i) => (
-      <mesh key={i} castShadow position={[x, y, z]} rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.1, 0.1, 0.12, 8]} />
-        <meshStandardMaterial color="#ff6b35" flatShading />
+      <mesh
+        key={i}
+        ref={(el) => {
+          wheelsRef.current[i] = el;
+        }}
+        castShadow
+        position={[x, y, z]}
+        rotation={[0, 0, Math.PI / 2]}
+      >
+        <cylinderGeometry args={[0.1, 0.1, 0.12, 6]} />
+        <meshStandardMaterial color="#ff6b35" flatShading roughness={0.86} />
       </mesh>
     ))}
   </group>
 );
 
-const MountainBikeMesh: React.FC<{ steerRef: React.RefObject<THREE.Group> }> = ({ steerRef }) => (
+const MountainBikeMesh: React.FC<{
+  steerRef: React.RefObject<THREE.Group>;
+  frontWheelRef: React.RefObject<THREE.Group>;
+  rearWheelRef: React.RefObject<THREE.Group>;
+}> = ({ steerRef, frontWheelRef, rearWheelRef }) => (
   <group position={[0, 0.05, 0]}>
-    <mesh castShadow position={[0, 0.34, -0.68]} rotation={[0, Math.PI / 2, 0]}>
-      <torusGeometry args={[0.32, 0.07, 6, 12]} />
-      <meshStandardMaterial color="#22272e" flatShading />
-    </mesh>
+    {/* Rear Wheel Assembly with Spokes */}
+    <group ref={rearWheelRef} position={[0, 0.34, -0.68]}>
+      <mesh castShadow rotation={[0, Math.PI / 2, 0]}>
+        <torusGeometry args={[0.32, 0.07, 6, 10]} />
+        <meshStandardMaterial color="#22272e" flatShading roughness={0.92} />
+      </mesh>
+      <mesh castShadow>
+        <boxGeometry args={[0.03, 0.58, 0.04]} />
+        <meshStandardMaterial color="#cbd5e1" flatShading roughness={0.85} />
+      </mesh>
+      <mesh castShadow>
+        <boxGeometry args={[0.03, 0.04, 0.58]} />
+        <meshStandardMaterial color="#cbd5e1" flatShading roughness={0.85} />
+      </mesh>
+    </group>
+
+    {/* Frame Top Tube & Down Tube */}
     <mesh castShadow position={[0, 0.58, 0.05]} rotation={[0.45, 0, 0]}>
       <boxGeometry args={[0.08, 0.08, 1.25]} />
-      <meshStandardMaterial color="#52b788" flatShading />
+      <meshStandardMaterial color="#52b788" flatShading roughness={0.88} />
     </mesh>
 
+    {/* Front Fork & Handlebar Steer Assembly */}
     <group ref={steerRef} position={[0, 0.62, 0.58]}>
       <mesh castShadow position={[0, 0, 0]} rotation={[-0.22, 0, 0]}>
         <cylinderGeometry args={[0.04, 0.04, 0.72, 6]} />
-        <meshStandardMaterial color="#e8dcc4" flatShading />
+        <meshStandardMaterial color="#e8dcc4" flatShading roughness={0.88} />
       </mesh>
       <mesh castShadow position={[0, 0.33, 0.04]} rotation={[0, 0, Math.PI / 2]}>
         <cylinderGeometry args={[0.035, 0.035, 0.95, 6]} />
-        <meshStandardMaterial color="#22272e" flatShading />
+        <meshStandardMaterial color="#22272e" flatShading roughness={0.9} />
       </mesh>
       {/* Brass Bicycle Bell on Right Handlebar! */}
       <mesh castShadow position={[-0.28, 0.37, 0.04]}>
         <cylinderGeometry args={[0.045, 0.045, 0.04, 8]} />
-        <meshStandardMaterial color="#ffd166" metalness={0.6} roughness={0.3} flatShading />
+        <meshStandardMaterial color="#ffd166" metalness={0.5} roughness={0.4} flatShading />
       </mesh>
-      <mesh castShadow position={[0, -0.28, 0.1]} rotation={[0, Math.PI / 2, 0]}>
-        <torusGeometry args={[0.32, 0.07, 6, 12]} />
-        <meshStandardMaterial color="#22272e" flatShading />
-      </mesh>
+      {/* Front Wheel Assembly with Spokes */}
+      <group ref={frontWheelRef} position={[0, -0.28, 0.1]}>
+        <mesh castShadow rotation={[0, Math.PI / 2, 0]}>
+          <torusGeometry args={[0.32, 0.07, 6, 10]} />
+          <meshStandardMaterial color="#22272e" flatShading roughness={0.92} />
+        </mesh>
+        <mesh castShadow>
+          <boxGeometry args={[0.03, 0.58, 0.04]} />
+          <meshStandardMaterial color="#cbd5e1" flatShading roughness={0.85} />
+        </mesh>
+        <mesh castShadow>
+          <boxGeometry args={[0.03, 0.04, 0.58]} />
+          <meshStandardMaterial color="#cbd5e1" flatShading roughness={0.85} />
+        </mesh>
+      </group>
     </group>
   </group>
 );
@@ -1312,28 +1481,28 @@ const CanoeMesh: React.FC<{ paddleRef: React.RefObject<THREE.Group> }> = ({ padd
   <group position={[0, 0.22, 0]}>
     <mesh castShadow receiveShadow position={[0, 0.05, 0]}>
       <boxGeometry args={[0.92, 0.38, 2.8]} />
-      <meshStandardMaterial color="#bc4749" flatShading />
+      <meshStandardMaterial color="#bc4749" flatShading roughness={0.88} />
     </mesh>
     <mesh castShadow position={[0, 0.14, 1.65]} rotation={[Math.PI / 2, 0, 0]}>
       <coneGeometry args={[0.46, 0.75, 4]} />
-      <meshStandardMaterial color="#bc4749" flatShading />
+      <meshStandardMaterial color="#bc4749" flatShading roughness={0.88} />
     </mesh>
     <mesh castShadow position={[0, 0.14, -1.65]} rotation={[-Math.PI / 2, 0, 0]}>
       <coneGeometry args={[0.46, 0.75, 4]} />
-      <meshStandardMaterial color="#bc4749" flatShading />
+      <meshStandardMaterial color="#bc4749" flatShading roughness={0.88} />
     </mesh>
     <mesh castShadow position={[0, 0.25, 0]}>
       <boxGeometry args={[0.96, 0.05, 2.82]} />
-      <meshStandardMaterial color="#d4a373" flatShading />
+      <meshStandardMaterial color="#d4a373" flatShading roughness={0.9} />
     </mesh>
     <group ref={paddleRef} position={[0, 0.65, 0.25]}>
       <mesh castShadow position={[0.52, -0.15, 0]} rotation={[0, 0, -0.4]}>
         <cylinderGeometry args={[0.025, 0.025, 1.35, 5]} />
-        <meshStandardMaterial color="#e9c46a" flatShading />
+        <meshStandardMaterial color="#e9c46a" flatShading roughness={0.9} />
       </mesh>
       <mesh castShadow position={[0.78, -0.62, 0]} rotation={[0, 0, -0.4]}>
         <boxGeometry args={[0.04, 0.45, 0.2]} />
-        <meshStandardMaterial color="#d94e34" flatShading />
+        <meshStandardMaterial color="#d94e34" flatShading roughness={0.88} />
       </mesh>
     </group>
   </group>

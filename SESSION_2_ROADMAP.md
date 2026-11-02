@@ -111,26 +111,24 @@ flowchart TD
     - **Deadfall / Fallen Logs:** Lichen-covered trunks laying across slopes and forest corridors for obstacle jumping.
   - `landmarks.glb`: Firewatch tower structure, A-frame tent, wooden docks, bird models.
   - `character.glb`: Segmented Toy Rig (8 capsule/box primitives with articulated joints, zero skeletal skinning overhead).
-- [ ] **Color Palette & Lighting Recipe:**
-  - Single shared material across props with `roughness: 0.9` (tactile clay feel, zero plastic specular shine).
-  - 32x32px Palette Atlas texture for instant global color grading without re-exporting 3D meshes.
-  - Lighting setup:
-    - `<hemisphereLight skyColor="#ffeed2" groundColor="#4d532a" intensity={0.6} />` (warm colored ambient shadows).
-    - Low-angle Golden Hour directional sunlight with soft shadow bias.
-    - `<N8AO aoSamples={6} halfRes />` from `@react-three/postprocessing` for contact shadows beneath wheels, boots, and trees.
+- [x] **Color Palette, Procedural Rig & Diorama Polish (Chantier B Completed ✅):**
+  - Unified matte clay material across terrain, foliage, character, and vehicles (`roughness: 0.88 - 0.92`, zero plastic specular shine).
+  - Ground Contact **Blob Shadow** under player & vehicles (dynamically scales and fades with airtime so wheels never appear to float).
+  - Procedural **Spinning Wheels** (spoked VTT wheels & urethane Longboard wheels rotating with $\Delta\theta = (v / R) \cdot \Delta t$).
+  - Vertex-colored **Water Shoreline Foam** & custom GPU vertex wave ripples along the canyon river and Mirror Lake.
 
 ### WP 3 — Terrain Stamping 2D & Map Scale Upgrade (1,000m Canyon Corridor)
-- [ ] **Map Scaling Architecture (Zero-Performance-Cost Upgrade):**
-  - **Dimensions:** Width $400\text{m}$ (canyon framing), Length $1,000\text{m}$ ($Z = -500$ to $+500$), Summit elevation $\approx 120\text{m}$ descending to lake at $0\text{m}$.
-  - **Grid Resolution:** $2.5\text{m}$ cell pitch ($\approx 130\text{k}$ low-poly triangles in a single non-indexed BufferGeometry).
-  - **Vegetation Population:** Scaled to 1,500 instanced pines + 3,500 grass tufts (still rendered in a single draw call).
-  - **Shadow Cost:** Exactly zero additional GPU load because the directional shadow camera follows the player in a fixed $150\text{m}$ frustum.
-  - **Run Length:** Upgrades run time from 40s to a satisfying **2 to 3-minute continuous flow state descent**.
-- [ ] **Spline Stamping & Shortcuts:**
-  - **Main Asphalt Road:** Width $7\text{m}$ ($d < 3.5\text{m}$), automatically clears vegetation, extrudes smooth dark ribbon (`#222428`) with dashed yellow centerline and occasional fallen log obstacles.
-  - **VTT Singletracks:** Narrow corridors ($d < 1.5\text{m}$) cutting through tree groves between road hairpins, painted ochre dirt, preserving Simplex roller undulations with natural jump kickers at exits.
-  - **Canoe River Canyon:** Sub-$Y=0$ winding canyon channel flowing into the lake with an active flow vector driving canoe glide.
-  - **Surface friction lookup:** `getSurfaceType(x, z)` enforcing optimal performance per vehicle.
+- [x] **Map Scaling Architecture (Chantier A Completed ✅):**
+  - **Dimensions:** Width $400\text{m}$ (canyon framing), Length $1,000\text{m}$ ($Z = -500$ to $+500$), Summit elevation $124\text{m}$ descending to Mirror Lake at $0\text{m}$.
+  - **Grid Resolution:** $180 \times 400$ analytical grid ($\approx 144\text{k}$ low-poly triangles in a single non-indexed BufferGeometry).
+  - **Vegetation Population:** Scaled to 1,350 instanced pines, 520 granite boulders, and 2,800 grass tufts (rendered in single instanced draw calls).
+  - **Shadow Cost:** Zero additional GPU load (directional shadow camera follows the player in a fixed frustum).
+  - **Run Length:** Full 1,000m descent with a 700m mega-zipline from the Summit Firewatch Tower.
+- [x] **Spline Stamping, Kickers, River Canyon & Fallen Logs (Chantier A Completed ✅):**
+  - **Main Asphalt Road:** Sweeping S-curves and hairpins (`asphaltCurve`), automatically clears vegetation, extrudes smooth dark ribbon (`#222428`) with dashed yellow centerline.
+  - **VTT Singletracks & Kickers:** Forest singletrack (`dirtCurve`) that **cuts across the asphalt hairpins**, painted ochre dirt, with 4 sculpted asymmetric jump kickers (`evaluateKickerBoost`) and slope-crest airborne launch physics.
+  - **Fallen Cedar Log Hurdles (`FALLEN_LOGS`):** 6 mossy cedar logs with golden lichen across the road and dirt trail requiring a well-timed Bunny-Hop / Ollie (`Space` / Gamepad `A`).
+  - **Canoe Whitewater River Canyon:** Sub-$Y=0$ winding river channel (`riverCurve`) starting at the Mid-Mountain Put-In Dock ($X = 62, Z = -135$) and flowing into Mirror Lake with directional current (`getRiverCurrentVector`).
 
 ### WP 4 — Analog Gamepad Feel & Hybrid Camera
 - [x] **Bluetooth Gamepad Integration (`navigator.getGamepads`):**

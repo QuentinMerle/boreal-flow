@@ -83,9 +83,9 @@ export const PHYSICS_PRESETS: Record<MovementMode, PhysicsPreset> = {
   },
 };
 
-// Campfire coordinates in world space (matching TerrainChunk Base Camp at [-10, campY, 115])
-export const CAMPFIRE_WORLD_POS = new THREE.Vector3(-7.9, 1.3, 117.7);
-export const CAMPFIRE_SEAT_POS = new THREE.Vector3(-6.8, 1.3, 117.8);
+// Campfire coordinates in world space (matching TerrainChunk Base Camp at [-10, campY, 240])
+export const CAMPFIRE_WORLD_POS = new THREE.Vector3(-7.9, 1.8, 242.7);
+export const CAMPFIRE_SEAT_POS = new THREE.Vector3(-6.8, 1.8, 242.8);
 
 // High-frequency mutable physics & environment state (NEVER triggers React re-renders inside useFrame)
 export interface MutablePhysicsState {
@@ -136,7 +136,7 @@ export interface MutablePhysicsState {
 }
 
 export const mutablePhysics: MutablePhysicsState = {
-  position: new THREE.Vector3(0, 74, -210),
+  position: new THREE.Vector3(-10, 124, -455),
   velocity: new THREE.Vector3(0, 0, 0),
   forward: new THREE.Vector3(0, 0, 1),
   groundNormal: new THREE.Vector3(0, 1, 0),

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MovementMode, mutablePhysics } from '../state/gameStore';
+import { MovementMode, mutablePhysics, CAMPFIRE_WORLD_POS } from '../state/gameStore';
 import { WILDLIFE_SPECIES, WildlifeSpecies } from '../world/parkActivitiesData';
 
 /**
@@ -416,7 +416,7 @@ class BorealSoundscape {
     const p = mutablePhysics;
     const now = this.ctx.currentTime;
     const speedRatio = THREE.MathUtils.clamp(p.speed / 32, 0, 1);
-    const altRatio = THREE.MathUtils.clamp(p.position.y / 75, 0, 1);
+    const altRatio = THREE.MathUtils.clamp(p.position.y / 125, 0, 1);
 
     if (p.poofCounter !== this.lastPoofCounter) {
       this.lastPoofCounter = p.poofCounter;
@@ -513,7 +513,10 @@ class BorealSoundscape {
 
     // 6. Step 4.2: Campfire Warm Crackling Hearth
     if (this.fireFilter && this.fireGain) {
-      const distToFire = Math.hypot(p.position.x - -7.9, p.position.z - 117.7);
+      const distToFire = Math.hypot(
+        p.position.x - CAMPFIRE_WORLD_POS.x,
+        p.position.z - CAMPFIRE_WORLD_POS.z
+      );
       if (p.specialState === 'CAMPFIRE' || distToFire < 18) {
         const proximity = p.specialState === 'CAMPFIRE' ? 1.0 : 1.0 - distToFire / 18;
         const crackleMod = 900 + Math.random() * 1400;

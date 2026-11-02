@@ -11,12 +11,13 @@ import {
   surfaceGrid,
   asphaltCurve,
   dirtCurve,
+  FALLEN_LOGS,
   getTerrainHeightOnly,
 } from '../world/terrainData';
 import { simplex2D } from '../math/noise';
 import { mutablePhysics } from '../state/gameStore';
 
-// Crisp "Firewatch / Lonely Mountains / A Short Hike" single-palette colors
+// Crisp "Firewatch / Lonely Mountains / A Short Hike" matte clay palette
 const PALETTE = {
   GRASS_HIGH: new THREE.Color('#4d7c5b'),
   GRASS_MID: new THREE.Color('#3b694c'),
@@ -29,7 +30,7 @@ const PALETTE = {
   LAKE_BED: new THREE.Color('#1c434d'),
 };
 
-// Shared uniform for GPU vertex shader wind sway (updated in useFrame, zero CPU overhead)
+// Shared uniform for GPU vertex shader wind & water sway (updated in useFrame, zero CPU overhead)
 const windUniforms = {
   uTime: { value: 0 },
 };
@@ -55,8 +56,7 @@ function injectWindShader(shader: THREE.WebGLProgramParametersWithUniforms, sway
 }
 
 /**
- * Generates a smooth, terrain-hugging extruded Ribbon BufferGeometry along a 3D spline,
- * plus optional dashed center lines for the scenic asphalt road.
+ * Generates a smooth, terrain-hugging extruded Ribbon BufferGeometry along a 3D spline.
  */
 function createSplineRibbonGeometry(
   curve: THREE.CatmullRomCurve3,
@@ -64,7 +64,7 @@ function createSplineRibbonGeometry(
   halfWidth: number,
   yOffset: number
 ): THREE.BufferGeometry {
-  const crossPts = 5; // 5 vertices across width so the ribbon conforms tightly to terrain
+  const crossPts = 5;
   const positions = new Float32Array((segments + 1) * crossPts * 3);
   const indices: number[] = [];
 
@@ -85,7 +85,6 @@ function createSplineRibbonGeometry(
       const u = (c / (crossPts - 1)) * 2 - 1; // -1 to +1
       const wx = pt.x + nx * halfWidth * u;
       const wz = pt.z + nz * halfWidth * u;
-      // Slight crown in the center of the ribbon, edges tucked slightly down into shoulder
       const crown = (1 - u * u) * 0.04;
       const wy = getTerrainHeightOnly(wx, wz) + yOffset + crown;
 
@@ -133,7 +132,7 @@ function createDashedCenterLineGeometry(
   for (let i = 0; i < totalDashes; i++) {
     const t0 = (i + 0.15) / totalDashes;
     const t1 = (i + 0.62) / totalDashes;
-    if (t1 >= 0.97) continue;
+    if (t1 >= 0.98) continue;
 
     curve.getPoint(t0, pt0);
     curve.getPoint(t1, pt1);
@@ -172,7 +171,7 @@ export const TerrainChunk: React.FC = () => {
   const campLightRef = useRef<THREE.PointLight>(null);
   const fireEmberMatRef = useRef<THREE.MeshStandardMaterial>(null);
 
-  // 1. Build flat-shaded, vertex-colored terrain geometry (without jagged black road triangles!)
+  // 1. Build flat-shaded, vertex-colored 1,000m terrain geometry
   const terrainGeometry = useMemo(() => {
     const baseGeo = new THREE.PlaneGeometry(
       TERRAIN_WIDTH,
@@ -207,12 +206,12 @@ export const TerrainChunk: React.FC = () => {
       const ny = niNorm.getY(i);
 
       const gx = THREE.MathUtils.clamp(
-        Math.round(((cx / TERRAIN_WIDTH) + 0.5) * GRID_SEGMENTS_X),
+        Math.round((cx / TERRAIN_WIDTH + 0.5) * GRID_SEGMENTS_X),
         0,
         GRID_SEGMENTS_X
       );
       const gz = THREE.MathUtils.clamp(
-        Math.round(((cz / TERRAIN_LENGTH) + 0.5) * GRID_SEGMENTS_Z),
+        Math.round((cz / TERRAIN_LENGTH + 0.5) * GRID_SEGMENTS_Z),
         0,
         GRID_SEGMENTS_Z
       );
@@ -221,18 +220,16 @@ export const TerrainChunk: React.FC = () => {
 
       if (cy < WATER_LEVEL - 0.15) {
         tmpColor.copy(PALETTE.LAKE_BED).offsetHSL(0, 0, jitter * 0.5);
-      } else if (sCode === 4 || (cy < WATER_LEVEL + 1.5 && cz > 90)) {
+      } else if (sCode === 4 || (cy < WATER_LEVEL + 1.5 && cz > 210)) {
         tmpColor.copy(PALETTE.SAND).offsetHSL(0, 0, jitter);
       } else if (sCode === 1) {
-        // Subtle gravel/grass shoulder underneath the smooth Asphalt Ribbon Mesh
         tmpColor.copy(PALETTE.SHOULDER_GRAVEL).offsetHSL(0, 0, jitter * 0.5);
       } else if (sCode === 2) {
-        // Mossy forest floor underneath the smooth Dirt Singletrack Ribbon Mesh
         tmpColor.copy(PALETTE.SHOULDER_MOSS).offsetHSL(0, 0, jitter * 0.5);
       } else if (ny < 0.76 || sCode === 3) {
         tmpColor.copy(ny < 0.65 ? PALETTE.ROCK_DARK : PALETTE.ROCK_LIGHT).offsetHSL(0, 0, jitter);
       } else {
-        if (cy > 38) tmpColor.copy(PALETTE.GRASS_WARM);
+        if (cy > 68) tmpColor.copy(PALETTE.GRASS_WARM);
         else if (jitter > 0.01) tmpColor.copy(PALETTE.GRASS_HIGH);
         else tmpColor.copy(PALETTE.GRASS_MID);
         tmpColor.offsetHSL(0, 0, jitter);
@@ -250,11 +247,11 @@ export const TerrainChunk: React.FC = () => {
     return nonIndexed;
   }, []);
 
-  // 2. Smooth Ribbon Geometries for Road, Dashed Yellow Center Lines & Dirt Trail
+  // 2. Smooth Ribbon Geometries for 1,000m Road, Dashed Yellow Center Lines & Dirt Singletrack
   const { roadRibbonGeo, roadStripeGeo, dirtRibbonGeo } = useMemo(() => {
-    const roadRibbon = createSplineRibbonGeometry(asphaltCurve, 260, 4.3, 0.06);
-    const roadStripe = createDashedCenterLineGeometry(asphaltCurve, 78, 0.14, 0.12);
-    const dirtRibbon = createSplineRibbonGeometry(dirtCurve, 220, 2.45, 0.05);
+    const roadRibbon = createSplineRibbonGeometry(asphaltCurve, 520, 4.4, 0.06);
+    const roadStripe = createDashedCenterLineGeometry(asphaltCurve, 155, 0.14, 0.12);
+    const dirtRibbon = createSplineRibbonGeometry(dirtCurve, 460, 2.5, 0.05);
     return {
       roadRibbonGeo: roadRibbon,
       roadStripeGeo: roadStripe,
@@ -262,7 +259,73 @@ export const TerrainChunk: React.FC = () => {
     };
   }, []);
 
-  // Instanced roadside wooden bollards & trail markers
+  // 3. Water Surface Geometry with Vertex-Colored Shoreline Foam (Canyon River + Mirror Lake)
+  const { waterGeometry, waterMaterial } = useMemo(() => {
+    const waterLen = 660; // Spans from Z = -160 to Z = +500 (center at Z = +170)
+    const centerZ = 170;
+    const geo = new THREE.PlaneGeometry(TERRAIN_WIDTH, waterLen, 110, 180);
+    geo.rotateX(-Math.PI / 2);
+
+    const pos = geo.attributes.position;
+    const colors = new Float32Array(pos.count * 3);
+    const cFoam = new THREE.Color('#eefaf8');
+    const cShallow = new THREE.Color('#3ca2b0');
+    const cDeep = new THREE.Color('#1d6373');
+    const tmp = new THREE.Color();
+
+    for (let i = 0; i < pos.count; i++) {
+      const wx = pos.getX(i);
+      const wz = pos.getZ(i) + centerZ;
+      pos.setZ(i, wz);
+
+      const terrainH = getTerrainHeightOnly(wx, wz);
+      const depth = WATER_LEVEL - terrainH;
+
+      if (depth > -0.25 && depth < 0.72) {
+        // Crisp white shoreline / riverbank foam
+        const foamT = THREE.MathUtils.clamp(1.0 - Math.max(0, depth) / 0.72, 0, 1);
+        tmp.copy(cShallow).lerp(cFoam, Math.pow(foamT, 1.3));
+      } else if (depth >= 0.72 && depth < 2.8) {
+        const shallowT = (depth - 0.72) / 2.08;
+        tmp.copy(cShallow).lerp(cDeep, shallowT);
+      } else {
+        tmp.copy(cDeep);
+      }
+
+      colors[i * 3] = tmp.r;
+      colors[i * 3 + 1] = tmp.g;
+      colors[i * 3 + 2] = tmp.b;
+    }
+
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.24,
+      metalness: 0.15,
+      transparent: true,
+      opacity: 0.86,
+      flatShading: true,
+    });
+
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = windUniforms.uTime;
+      shader.vertexShader =
+        `uniform float uTime;\n` +
+        shader.vertexShader.replace(
+          '#include <begin_vertex>',
+          `
+          #include <begin_vertex>
+          float wave = sin(uTime * 2.4 + position.x * 0.22 + position.z * 0.18) * 0.045;
+          transformed.y += wave;
+          `
+        );
+    };
+
+    return { waterGeometry: geo, waterMaterial: mat };
+  }, []);
+
+  // 4. Instanced roadside wooden bollards & trail markers
   const { postMatrices, postColors } = useMemo(() => {
     const matrices: THREE.Matrix4[] = [];
     const colors: THREE.Color[] = [];
@@ -270,7 +333,7 @@ export const TerrainChunk: React.FC = () => {
     const pt = new THREE.Vector3();
     const tangent = new THREE.Vector3();
 
-    const roadSteps = 65;
+    const roadSteps = 120;
     for (let i = 2; i < roadSteps - 2; i++) {
       const t = i / roadSteps;
       asphaltCurve.getPoint(t, pt);
@@ -279,8 +342,8 @@ export const TerrainChunk: React.FC = () => {
       const rightZ = tangent.x;
 
       for (const side of [-1, 1]) {
-        const px = pt.x + rightX * side * 5.2;
-        const pz = pt.z + rightZ * side * 5.2;
+        const px = pt.x + rightX * side * 5.3;
+        const pz = pt.z + rightZ * side * 5.3;
         const py = getTerrainHeightOnly(px, pz);
         if (py > WATER_LEVEL + 0.5) {
           dummy.position.set(px, py + 0.45, pz);
@@ -293,7 +356,7 @@ export const TerrainChunk: React.FC = () => {
       }
     }
 
-    const dirtSteps = 55;
+    const dirtSteps = 105;
     for (let i = 2; i < dirtSteps - 2; i += 2) {
       const t = i / dirtSteps;
       dirtCurve.getPoint(t, pt);
@@ -302,8 +365,8 @@ export const TerrainChunk: React.FC = () => {
       const rightZ = tangent.x;
 
       const side = i % 4 === 0 ? 1 : -1;
-      const px = pt.x + rightX * side * 3.1;
-      const pz = pt.z + rightZ * side * 3.1;
+      const px = pt.x + rightX * side * 3.2;
+      const pz = pt.z + rightZ * side * 3.2;
       const py = getTerrainHeightOnly(px, pz);
       if (py > WATER_LEVEL + 0.5) {
         dummy.position.set(px, py + 0.35, pz);
@@ -318,7 +381,7 @@ export const TerrainChunk: React.FC = () => {
     return { postMatrices: matrices, postColors: colors };
   }, []);
 
-  // Step 2.1: Instanced Foliage (Pines, Mossy Rocks, and Lush Grass Tufts)
+  // 5. Instanced Foliage for 1,000m Map (1,250 Pines, 420 Mossy Rocks, 2,500 Lush Grass Tufts)
   const { treeMatrices, rockMatrices, grassMatrices } = useMemo(() => {
     const trees: THREE.Matrix4[] = [];
     const rocks: THREE.Matrix4[] = [];
@@ -326,45 +389,45 @@ export const TerrainChunk: React.FC = () => {
     const dummy = new THREE.Object3D();
     const cols = GRID_SEGMENTS_X + 1;
 
-    for (let i = 0; i < 550; i++) {
+    for (let i = 0; i < 1350; i++) {
       const rx = ((Math.sin(i * 127.1) * 43758.5453) % 1 + 1) % 1;
       const rz = ((Math.sin(i * 311.7) * 43758.5453) % 1 + 1) % 1;
-      const x = (rx - 0.5) * (TERRAIN_WIDTH - 20);
-      const z = (rz - 0.5) * (TERRAIN_LENGTH - 24);
+      const x = (rx - 0.5) * (TERRAIN_WIDTH - 24);
+      const z = (rz - 0.5) * (TERRAIN_LENGTH - 30);
 
-      if (Math.hypot(x - -11, z - 114) < 11) continue;
-      if (Math.hypot(x - 0, z - -226) < 14) continue;
+      if (Math.hypot(x - -10, z - 240) < 13) continue;
+      if (Math.hypot(x - 0, z - -475) < 16) continue;
 
-      const gx = Math.round(((x / TERRAIN_WIDTH) + 0.5) * GRID_SEGMENTS_X);
-      const gz = Math.round(((z / TERRAIN_LENGTH) + 0.5) * GRID_SEGMENTS_Z);
+      const gx = Math.round((x / TERRAIN_WIDTH + 0.5) * GRID_SEGMENTS_X);
+      const gz = Math.round((z / TERRAIN_LENGTH + 0.5) * GRID_SEGMENTS_Z);
       const sCode = surfaceGrid[gz * cols + gx];
       const y = getTerrainHeightOnly(x, z);
 
-      if (sCode === 0 && y > WATER_LEVEL + 1.5 && y < 70) {
-        const scale = 0.8 + ((i * 17) % 12) * 0.11;
+      if (sCode === 0 && y > WATER_LEVEL + 1.5 && y < 120) {
+        const scale = 0.82 + ((i * 17) % 12) * 0.11;
         dummy.position.set(x, y, z);
         dummy.rotation.set(0, (i * 1.3) % (Math.PI * 2), 0);
-        dummy.scale.set(scale, scale * (0.95 + ((i % 5) * 0.08)), scale);
+        dummy.scale.set(scale, scale * (0.95 + (i % 5) * 0.08), scale);
         dummy.updateMatrix();
         trees.push(dummy.matrix.clone());
       }
     }
 
-    for (let i = 0; i < 280; i++) {
+    for (let i = 0; i < 520; i++) {
       const rx = ((Math.sin(i * 517.3 + 9) * 43758.5453) % 1 + 1) % 1;
       const rz = ((Math.sin(i * 811.1 + 3) * 43758.5453) % 1 + 1) % 1;
-      const x = (rx - 0.5) * (TERRAIN_WIDTH - 20);
-      const z = (rz - 0.5) * (TERRAIN_LENGTH - 24);
-      if (Math.hypot(x - -11, z - 114) < 9) continue;
-      if (Math.hypot(x - 0, z - -226) < 12) continue;
+      const x = (rx - 0.5) * (TERRAIN_WIDTH - 24);
+      const z = (rz - 0.5) * (TERRAIN_LENGTH - 30);
+      if (Math.hypot(x - -10, z - 240) < 10) continue;
+      if (Math.hypot(x - 0, z - -475) < 14) continue;
 
-      const gx = Math.round(((x / TERRAIN_WIDTH) + 0.5) * GRID_SEGMENTS_X);
-      const gz = Math.round(((z / TERRAIN_LENGTH) + 0.5) * GRID_SEGMENTS_Z);
+      const gx = Math.round((x / TERRAIN_WIDTH + 0.5) * GRID_SEGMENTS_X);
+      const gz = Math.round((z / TERRAIN_LENGTH + 0.5) * GRID_SEGMENTS_Z);
       const sCode = surfaceGrid[gz * cols + gx];
       const y = getTerrainHeightOnly(x, z);
 
-      if ((sCode === 0 || sCode === 3 || sCode === 4) && y > WATER_LEVEL + 0.3) {
-        const sx = 0.55 + ((i * 13) % 9) * 0.16;
+      if ((sCode === 0 || sCode === 3 || sCode === 4) && y > WATER_LEVEL + 0.25) {
+        const sx = 0.6 + ((i * 13) % 9) * 0.18;
         const sy = sx * (0.6 + ((i * 7) % 5) * 0.12);
         dummy.position.set(x, y + sy * 0.25, z);
         dummy.rotation.set((i * 0.4) % 1, (i * 1.9) % 6, (i * 0.3) % 1);
@@ -374,18 +437,18 @@ export const TerrainChunk: React.FC = () => {
       }
     }
 
-    for (let i = 0; i < 1600; i++) {
+    for (let i = 0; i < 2800; i++) {
       const rx = ((Math.sin(i * 91.7 + 41) * 43758.5453) % 1 + 1) % 1;
       const rz = ((Math.sin(i * 241.3 + 19) * 43758.5453) % 1 + 1) % 1;
-      const x = (rx - 0.5) * (TERRAIN_WIDTH - 24);
-      const z = (rz - 0.5) * (TERRAIN_LENGTH - 30);
+      const x = (rx - 0.5) * (TERRAIN_WIDTH - 28);
+      const z = (rz - 0.5) * (TERRAIN_LENGTH - 36);
 
-      const gx = Math.round(((x / TERRAIN_WIDTH) + 0.5) * GRID_SEGMENTS_X);
-      const gz = Math.round(((z / TERRAIN_LENGTH) + 0.5) * GRID_SEGMENTS_Z);
+      const gx = Math.round((x / TERRAIN_WIDTH + 0.5) * GRID_SEGMENTS_X);
+      const gz = Math.round((z / TERRAIN_LENGTH + 0.5) * GRID_SEGMENTS_Z);
       const sCode = surfaceGrid[gz * cols + gx];
       const y = getTerrainHeightOnly(x, z);
 
-      if (sCode === 0 && y > WATER_LEVEL + 0.8 && y < 64) {
+      if (sCode === 0 && y > WATER_LEVEL + 0.8 && y < 115) {
         const s = 0.45 + ((i * 11) % 7) * 0.08;
         dummy.position.set(x, y + s * 0.4, z);
         dummy.rotation.set(0, (i * 2.1) % (Math.PI * 2), 0);
@@ -418,27 +481,27 @@ export const TerrainChunk: React.FC = () => {
 
   const dockY = WATER_LEVEL + 0.25;
   const campX = -10;
-  const campZ = 115;
+  const campZ = 240;
   const campY = getTerrainHeightOnly(campX, campZ);
 
   return (
     <group>
-      {/* Main Low-Poly Vertex-Colored Terrain */}
+      {/* Main Low-Poly Vertex-Colored Terrain (Matte Clay Roughness) */}
       <mesh geometry={terrainGeometry} receiveShadow castShadow>
         <meshStandardMaterial
           vertexColors
           flatShading
-          roughness={0.88}
-          metalness={0.04}
+          roughness={0.9}
+          metalness={0.02}
         />
       </mesh>
 
       {/* Dedicated Smooth Charcoal Asphalt Road Ribbon Mesh (+0.06m above terrain) */}
       <mesh geometry={roadRibbonGeo} receiveShadow>
         <meshStandardMaterial
-          color="#222428"
-          roughness={0.78}
-          metalness={0.06}
+          color="#24272c"
+          roughness={0.85}
+          metalness={0.03}
           polygonOffset
           polygonOffsetFactor={-1}
         />
@@ -448,7 +511,7 @@ export const TerrainChunk: React.FC = () => {
       <mesh geometry={roadStripeGeo} receiveShadow>
         <meshStandardMaterial
           color="#f4b942"
-          roughness={0.5}
+          roughness={0.65}
           polygonOffset
           polygonOffsetFactor={-2}
         />
@@ -459,51 +522,69 @@ export const TerrainChunk: React.FC = () => {
         <meshStandardMaterial
           color="#8f5336"
           roughness={0.92}
-          metalness={0.02}
+          metalness={0.01}
           flatShading
           polygonOffset
           polygonOffsetFactor={-1}
         />
       </mesh>
 
-      {/* Mirror Lake & River Plane */}
-      <mesh
-        position={[0, WATER_LEVEL, 145]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        receiveShadow
-      >
-        <planeGeometry args={[TERRAIN_WIDTH, 240, 32, 32]} />
-        <meshStandardMaterial
-          color="#2b7a8c"
-          roughness={0.18}
-          metalness={0.25}
-          transparent
-          opacity={0.86}
-          flatShading
-        />
-      </mesh>
+      {/* Fallen Cedar Tree Log Hurdles across Road & Singletrack (Bunny-Hop Obstacles!) */}
+      {FALLEN_LOGS.map((log) => (
+        <group
+          key={log.id}
+          position={[log.position.x, log.position.y, log.position.z]}
+          rotation={[0, log.yaw, 0]}
+        >
+          {/* Main Cedar Trunk */}
+          <mesh castShadow receiveShadow rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[log.radius * 0.88, log.radius, log.length, 7]} />
+            <meshStandardMaterial color="#5c3a21" flatShading roughness={0.92} />
+          </mesh>
+          {/* Bright Moss & Golden Lichen Strip on Top for High Visibility */}
+          <mesh castShadow position={[0, log.radius * 0.78, 0]}>
+            <boxGeometry args={[log.radius * 0.95, 0.12, log.length * 0.78]} />
+            <meshStandardMaterial color="#6b8e4e" flatShading roughness={0.9} />
+          </mesh>
+          <mesh position={[0, log.radius * 0.86, 0]}>
+            <boxGeometry args={[log.radius * 0.5, 0.08, log.length * 0.45]} />
+            <meshStandardMaterial color="#f4a261" flatShading roughness={0.88} />
+          </mesh>
+        </group>
+      ))}
 
-      {/* Wooden Lake Dock at the bottom of the slope */}
-      <group position={[2, dockY, 130]}>
+      {/* Canyon Whitewater River & Mirror Lake Plane with Shoreline Foam */}
+      <mesh geometry={waterGeometry} material={waterMaterial} receiveShadow />
+
+      {/* Mid-Mountain Canyon River Wooden Put-In Deck (at x=62, z=-135) */}
+      <group position={[62, WATER_LEVEL + 0.2, -135]} rotation={[0, 0.35, 0]}>
+        <mesh castShadow receiveShadow position={[0, 0.15, 0]}>
+          <boxGeometry args={[3.6, 0.28, 7.5]} />
+          <meshStandardMaterial color="#8c6239" flatShading roughness={0.88} />
+        </mesh>
+      </group>
+
+      {/* Wooden Lake Dock at the bottom of the 1,000m slope */}
+      <group position={[2, dockY, 256]}>
         <mesh castShadow receiveShadow position={[0, 0.15, 0]}>
           <boxGeometry args={[4.2, 0.3, 18]} />
-          <meshStandardMaterial color="#8c6239" flatShading roughness={0.85} />
+          <meshStandardMaterial color="#8c6239" flatShading roughness={0.88} />
         </mesh>
         {[-7, -2, 3, 8].map((zOff, idx) => (
           <React.Fragment key={idx}>
             <mesh castShadow position={[-1.8, -0.6, zOff]}>
               <cylinderGeometry args={[0.18, 0.18, 2.2, 6]} />
-              <meshStandardMaterial color="#5c3d22" flatShading />
+              <meshStandardMaterial color="#5c3d22" flatShading roughness={0.9} />
             </mesh>
             <mesh castShadow position={[1.8, -0.6, zOff]}>
               <cylinderGeometry args={[0.18, 0.18, 2.2, 6]} />
-              <meshStandardMaterial color="#5c3d22" flatShading />
+              <meshStandardMaterial color="#5c3d22" flatShading roughness={0.9} />
             </mesh>
           </React.Fragment>
         ))}
       </group>
 
-      {/* Step 2.2: Lakeside Base Camp (Emissive Expedition Tent & Warm Campfire at Night) */}
+      {/* Lakeside Base Camp (Emissive Expedition Tent & Warm Campfire at Night) */}
       <group position={[campX, campY, campZ]} rotation={[0, 0.45, 0]}>
         <mesh castShadow receiveShadow position={[0, 1.15, 0]} rotation={[0, Math.PI / 4, 0]}>
           <coneGeometry args={[2.3, 2.4, 4]} />
@@ -513,7 +594,7 @@ export const TerrainChunk: React.FC = () => {
             emissive="#ff9f1c"
             emissiveIntensity={0.1}
             flatShading
-            roughness={0.75}
+            roughness={0.85}
           />
         </mesh>
         <group position={[2.8, 0.12, 1.8]}>
@@ -529,7 +610,7 @@ export const TerrainChunk: React.FC = () => {
           </mesh>
           <mesh castShadow receiveShadow position={[1.3, 0.18, -0.4]} rotation={[Math.PI / 2, 0, 0.3]}>
             <cylinderGeometry args={[0.22, 0.22, 2.1, 6]} />
-            <meshStandardMaterial color="#6c462b" flatShading />
+            <meshStandardMaterial color="#6c462b" flatShading roughness={0.9} />
           </mesh>
           <pointLight
             ref={campLightRef}
@@ -545,7 +626,7 @@ export const TerrainChunk: React.FC = () => {
       {/* Instanced Roadside & Trailhead Markers */}
       <InstancedPosts matrices={postMatrices} colors={postColors} />
 
-      {/* Step 2.1: Instanced Pines, Boulders & Grass with GPU Wind Sway */}
+      {/* Instanced Pines, Boulders & Grass with GPU Wind Sway */}
       <InstancedPines matrices={treeMatrices} />
       <InstancedRocks matrices={rockMatrices} />
       <InstancedGrass matrices={grassMatrices} />
@@ -573,7 +654,7 @@ const InstancedPosts: React.FC<{ matrices: THREE.Matrix4[]; colors: THREE.Color[
   return (
     <instancedMesh ref={meshRef} args={[undefined, undefined, matrices.length]} castShadow receiveShadow>
       <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial flatShading roughness={0.8} />
+      <meshStandardMaterial flatShading roughness={0.88} />
     </instancedMesh>
   );
 };
@@ -587,7 +668,7 @@ const InstancedPines: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
     const mat = new THREE.MeshStandardMaterial({
       color: '#274c3c',
       flatShading: true,
-      roughness: 0.85,
+      roughness: 0.9,
     });
     mat.onBeforeCompile = (shader) => injectWindShader(shader, 0.085);
     return mat;
@@ -597,7 +678,7 @@ const InstancedPines: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
     const mat = new THREE.MeshStandardMaterial({
       color: '#34624e',
       flatShading: true,
-      roughness: 0.82,
+      roughness: 0.88,
     });
     mat.onBeforeCompile = (shader) => injectWindShader(shader, 0.135);
     return mat;
@@ -626,7 +707,7 @@ const InstancedPines: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
     <group>
       <instancedMesh ref={trunkRef} args={[undefined, undefined, matrices.length]} castShadow>
         <cylinderGeometry args={[0.2, 0.34, 2.2, 5]} />
-        <meshStandardMaterial color="#5c4028" flatShading roughness={0.9} />
+        <meshStandardMaterial color="#5c4028" flatShading roughness={0.92} />
       </instancedMesh>
       <instancedMesh
         ref={lowerTierRef}
@@ -666,7 +747,7 @@ const InstancedRocks: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
   return (
     <instancedMesh ref={meshRef} args={[undefined, undefined, matrices.length]} castShadow receiveShadow>
       <dodecahedronGeometry args={[1, 0]} />
-      <meshStandardMaterial flatShading roughness={0.9} />
+      <meshStandardMaterial flatShading roughness={0.92} />
     </instancedMesh>
   );
 };
@@ -678,7 +759,7 @@ const InstancedGrass: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
     const mat = new THREE.MeshStandardMaterial({
       color: '#5a8f5c',
       flatShading: true,
-      roughness: 0.85,
+      roughness: 0.9,
     });
     mat.onBeforeCompile = (shader) => injectWindShader(shader, 0.24);
     return mat;
