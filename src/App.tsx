@@ -2,6 +2,7 @@ import React from 'react';
 import { Canvas } from '@react-three/fiber';
 import { TerrainChunk } from './components/TerrainChunk';
 import { ParkActivities } from './components/ParkActivities';
+import { TriathlonCourse } from './components/TriathlonCourse';
 import { DioramaCamera } from './components/DioramaCamera';
 import { ArcadeController } from './components/ArcadeController';
 import { ParticleJuice } from './components/ParticleJuice';
@@ -22,6 +23,9 @@ export const App: React.FC = () => {
 
         {/* Step 1.1 & 2.1: 500m Mountain Slope, Splines, Wind-Swaying Foliage & Night Base Camp */}
         <TerrainChunk />
+
+        {/* Step 3.1 & 3.2: 50m Rising Campfire Smoke Plume, Arches & Boreal Triathlon Engine */}
+        <TriathlonCourse />
 
         {/* Step 3.1, 3.2 & 3.3: Racks, Wildlife Emitters, Firewatch Tower, Bouldering Crag & Zipline */}
         <ParkActivities />

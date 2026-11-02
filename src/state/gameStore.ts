@@ -6,6 +6,8 @@ export type SurfaceType = 'ASPHALT' | 'DIRT' | 'GRASS' | 'ROCK' | 'SAND' | 'WATE
 export type TimePreset = 'DAWN' | 'NOON' | 'GOLDEN' | 'NIGHT';
 export type SpecialActionState = 'NONE' | 'CLIMBING' | 'ZIPLINE' | 'CAMPFIRE';
 export type CameraMode = 'DIORAMA' | 'COCKPIT';
+export type TriathlonStatus = 'IDLE' | 'ACTIVE' | 'FINISHED';
+export type BadgeType = 'MAPLE' | 'JAY' | 'MOOSE' | 'NONE';
 
 export interface PhysicsPreset {
   label: string;
@@ -124,6 +126,13 @@ export interface MutablePhysicsState {
   cameraMode: CameraMode;
   gamepadConnected: boolean;
   gamepadName: string;
+  // Session 2: Boreal Triathlon & Diegetic Loop
+  triathlonStatus: TriathlonStatus;
+  triathlonTimer: number;
+  triathlonFinishTime: number;
+  triathlonBadge: BadgeType;
+  triathlonVehicles: MovementMode[];
+  triathlonPB: number;
 }
 
 export const mutablePhysics: MutablePhysicsState = {
@@ -160,6 +169,19 @@ export const mutablePhysics: MutablePhysicsState = {
   cameraMode: 'DIORAMA',
   gamepadConnected: false,
   gamepadName: '',
+  triathlonStatus: 'IDLE',
+  triathlonTimer: 0,
+  triathlonFinishTime: 0,
+  triathlonBadge: 'NONE',
+  triathlonVehicles: ['LONGBOARD'],
+  triathlonPB: (() => {
+    try {
+      const saved = localStorage.getItem('boreal_triathlon_pb');
+      return saved ? parseFloat(saved) : Infinity;
+    } catch {
+      return Infinity;
+    }
+  })(),
 };
 
 export function triggerPoofEffect(pos: THREE.Vector3) {
@@ -184,6 +206,12 @@ interface GameUIState {
   discoveredBirds: string[];
   cameraMode: CameraMode;
   gamepadConnected: boolean;
+  triathlonStatus: TriathlonStatus;
+  triathlonTimer: number;
+  triathlonFinishTime: number;
+  triathlonBadge: BadgeType;
+  triathlonVehicles: MovementMode[];
+  triathlonPB: number;
   setMode: (mode: MovementMode, withPoof?: boolean) => void;
   respawnAt: (target: SpawnLocation, defaultMode?: MovementMode) => void;
   setTimePreset: (preset: TimePreset) => void;
@@ -195,6 +223,10 @@ interface GameUIState {
   toggleCameraMode: () => void;
   setCameraMode: (mode: CameraMode) => void;
   setGamepadConnected: (connected: boolean) => void;
+  startTriathlon: (initialMode: MovementMode) => void;
+  updateTriathlonVehicle: (mode: MovementMode) => void;
+  finishTriathlon: (finishTime: number, badge: BadgeType) => void;
+  resetTriathlon: () => void;
 }
 
 export const TIME_PRESET_HOURS: Record<TimePreset, number> = {
@@ -214,6 +246,12 @@ export const useGameStore = create<GameUIState>((set) => ({
   discoveredBirds: [],
   cameraMode: 'DIORAMA',
   gamepadConnected: false,
+  triathlonStatus: 'IDLE',
+  triathlonTimer: 0,
+  triathlonFinishTime: 0,
+  triathlonBadge: 'NONE',
+  triathlonVehicles: ['LONGBOARD'],
+  triathlonPB: mutablePhysics.triathlonPB,
   setMode: (mode, withPoof = true) =>
     set((state) => {
       if (mutablePhysics.specialState === 'CAMPFIRE') {
@@ -222,17 +260,32 @@ export const useGameStore = create<GameUIState>((set) => ({
       if (withPoof && state.mode !== mode) {
         triggerPoofEffect(mutablePhysics.position);
       }
-      return { mode, binocularsActive: false };
+      if (mutablePhysics.triathlonStatus === 'ACTIVE' && !mutablePhysics.triathlonVehicles.includes(mode)) {
+        mutablePhysics.triathlonVehicles.push(mode);
+      }
+      return {
+        mode,
+        binocularsActive: false,
+        triathlonVehicles: [...mutablePhysics.triathlonVehicles],
+      };
     }),
   respawnAt: (target, defaultMode) =>
     set((state) => {
       mutablePhysics.specialState = target === 'CAMPFIRE_HUB' ? 'CAMPFIRE' : 'NONE';
       mutablePhysics.stamina = 1.0;
+      if (target === 'SUMMIT_ROAD' || target === 'SUMMIT_TRAIL') {
+        mutablePhysics.triathlonStatus = 'IDLE';
+        mutablePhysics.triathlonTimer = 0;
+        mutablePhysics.triathlonFinishTime = 0;
+        mutablePhysics.triathlonBadge = 'NONE';
+      }
       return {
         spawnTarget: target,
         spawnCounter: state.spawnCounter + 1,
         mode: defaultMode ?? state.mode,
         binocularsActive: false,
+        triathlonStatus: mutablePhysics.triathlonStatus,
+        triathlonTimer: mutablePhysics.triathlonTimer,
       };
     }),
   setTimePreset: (preset) => {
@@ -270,5 +323,53 @@ export const useGameStore = create<GameUIState>((set) => ({
   setGamepadConnected: (connected) => {
     mutablePhysics.gamepadConnected = connected;
     set({ gamepadConnected: connected });
+  },
+  startTriathlon: (initialMode) => {
+    mutablePhysics.triathlonStatus = 'ACTIVE';
+    mutablePhysics.triathlonTimer = 0;
+    mutablePhysics.triathlonFinishTime = 0;
+    mutablePhysics.triathlonBadge = 'NONE';
+    mutablePhysics.triathlonVehicles = [initialMode];
+    set({
+      triathlonStatus: 'ACTIVE',
+      triathlonTimer: 0,
+      triathlonFinishTime: 0,
+      triathlonBadge: 'NONE',
+      triathlonVehicles: [initialMode],
+    });
+  },
+  updateTriathlonVehicle: (mode) => {
+    if (!mutablePhysics.triathlonVehicles.includes(mode)) {
+      mutablePhysics.triathlonVehicles.push(mode);
+      set((s) => ({ triathlonVehicles: [...s.triathlonVehicles, mode] }));
+    }
+  },
+  finishTriathlon: (finishTime, badge) => {
+    mutablePhysics.triathlonStatus = 'FINISHED';
+    mutablePhysics.triathlonFinishTime = finishTime;
+    mutablePhysics.triathlonBadge = badge;
+    const isNewPB = finishTime < mutablePhysics.triathlonPB;
+    if (isNewPB) {
+      mutablePhysics.triathlonPB = finishTime;
+      try {
+        localStorage.setItem('boreal_triathlon_pb', finishTime.toFixed(2));
+      } catch {}
+    }
+    set({
+      triathlonStatus: 'FINISHED',
+      triathlonFinishTime: finishTime,
+      triathlonBadge: badge,
+      triathlonPB: mutablePhysics.triathlonPB,
+    });
+  },
+  resetTriathlon: () => {
+    mutablePhysics.triathlonStatus = 'IDLE';
+    mutablePhysics.triathlonTimer = 0;
+    mutablePhysics.triathlonFinishTime = 0;
+    set({
+      triathlonStatus: 'IDLE',
+      triathlonTimer: 0,
+      triathlonFinishTime: 0,
+    });
   },
 }));

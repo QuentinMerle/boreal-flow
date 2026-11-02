@@ -20,6 +20,12 @@ export const HudOverlay: React.FC = () => {
   const discoveredBirds = useGameStore((s) => s.discoveredBirds);
   const cameraMode = useGameStore((s) => s.cameraMode);
   const gamepadConnected = useGameStore((s) => s.gamepadConnected);
+  const triathlonStatus = useGameStore((s) => s.triathlonStatus);
+  const triathlonFinishTime = useGameStore((s) => s.triathlonFinishTime);
+  const triathlonBadge = useGameStore((s) => s.triathlonBadge);
+  const triathlonVehicles = useGameStore((s) => s.triathlonVehicles);
+  const triathlonPB = useGameStore((s) => s.triathlonPB);
+  const resetTriathlon = useGameStore((s) => s.resetTriathlon);
 
   const setMode = useGameStore((s) => s.setMode);
   const respawnAt = useGameStore((s) => s.respawnAt);
@@ -40,6 +46,8 @@ export const HudOverlay: React.FC = () => {
   const staminaCircleRef = useRef<SVGCircleElement>(null);
   const binoTargetRef = useRef<HTMLDivElement>(null);
   const binoBarRef = useRef<HTMLDivElement>(null);
+  const triathlonLiveRef = useRef<HTMLDivElement>(null);
+  const triathlonTimeRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     let rafId = 0;
@@ -67,6 +75,19 @@ export const HudOverlay: React.FC = () => {
       }
       if (headlampDomRef.current) {
         headlampDomRef.current.style.display = p.headlampOn ? 'inline-block' : 'none';
+      }
+      if (triathlonLiveRef.current && triathlonTimeRef.current) {
+        if (p.triathlonStatus === 'ACTIVE') {
+          triathlonLiveRef.current.style.opacity = '1';
+          triathlonLiveRef.current.style.transform = 'translate(-50%, 0)';
+          const totalSecs = p.triathlonTimer;
+          const mins = Math.floor(totalSecs / 60);
+          const secs = (totalSecs % 60).toFixed(1);
+          triathlonTimeRef.current.textContent = `${mins}:${secs.padStart(4, '0')}`;
+        } else {
+          triathlonLiveRef.current.style.opacity = '0';
+          triathlonLiveRef.current.style.transform = 'translate(-50%, -12px)';
+        }
       }
       if (promptDomRef.current) {
         if (p.contextPrompt) {
@@ -274,6 +295,153 @@ export const HudOverlay: React.FC = () => {
         </span>
       </div>
 
+      {/* Step 3.2: Floating Live Triathlon Chronometer (60Hz Direct DOM) */}
+      <div
+        ref={triathlonLiveRef}
+        style={{
+          position: 'fixed',
+          top: '24px',
+          left: '50%',
+          transform: 'translate(-50%, -12px)',
+          opacity: 0,
+          transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+          background: 'rgba(20, 29, 27, 0.88)',
+          backdropFilter: 'blur(10px)',
+          border: '1.5px solid #ffd166',
+          borderRadius: '999px',
+          padding: '8px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          pointerEvents: 'none',
+          zIndex: 10,
+        }}
+      >
+        <span style={{ fontSize: '11px', fontWeight: 800, color: '#ffd166', letterSpacing: '0.12em' }}>
+          🌲 TRIATHLON
+        </span>
+        <span
+          ref={triathlonTimeRef}
+          style={{
+            fontSize: '22px',
+            fontWeight: 900,
+            fontVariantNumeric: 'tabular-nums',
+            color: '#f4f1ea',
+            letterSpacing: '0.04em',
+          }}
+        >
+          0:00.0
+        </span>
+        <span style={{ fontSize: '13px', color: '#a3b8b0', fontWeight: 600 }}>
+          {triathlonVehicles.map((v) => (v === 'LONGBOARD' ? '🛹' : v === 'BIKE' ? '🚵' : v === 'CANOE' ? '🛶' : '🚶')).join(' ')}
+        </span>
+      </div>
+
+      {/* Step 3.2: Triumphant Boreal Triathlon Finish Card */}
+      {triathlonStatus === 'FINISHED' && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: 'rgba(20, 29, 27, 0.94)',
+            backdropFilter: 'blur(14px)',
+            border: '2px solid #ffd166',
+            borderRadius: '20px',
+            padding: '28px 36px',
+            textAlign: 'center',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.65)',
+            pointerEvents: 'auto',
+            maxWidth: '440px',
+            width: '90%',
+            zIndex: 100,
+          }}
+        >
+          <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.18em', color: '#ffd166' }}>
+            🌲 BOREAL TRIATHLON COMPLETED 🌲
+          </div>
+
+          <div style={{ fontSize: '48px', margin: '14px 0 6px' }}>
+            {triathlonBadge === 'MAPLE' ? '🍁' : triathlonBadge === 'JAY' ? '🪶' : '🦌'}
+          </div>
+
+          <div style={{ fontSize: '20px', fontWeight: 900, color: '#ffd166' }}>
+            {triathlonBadge === 'MAPLE'
+              ? "FEUILLE D'ÉRABLE (OR)"
+              : triathlonBadge === 'JAY'
+              ? 'PLUME DE GEAI (ARGENT)'
+              : "BOIS D'ORIGNAL (BRONZE)"}
+          </div>
+
+          <div style={{ fontSize: '34px', fontWeight: 900, margin: '8px 0', fontVariantNumeric: 'tabular-nums', color: '#f4f1ea' }}>
+            {triathlonFinishTime.toFixed(1)}s
+          </div>
+
+          {triathlonFinishTime <= triathlonPB && (
+            <div
+              style={{
+                display: 'inline-block',
+                background: 'rgba(255, 209, 102, 0.2)',
+                color: '#ffd166',
+                border: '1px solid rgba(255, 209, 102, 0.5)',
+                borderRadius: '6px',
+                padding: '3px 10px',
+                fontSize: '11px',
+                fontWeight: 800,
+                marginBottom: '12px',
+              }}
+            >
+              🏆 NOUVEAU RECORD PERSONNEL !
+            </div>
+          )}
+
+          <div style={{ fontSize: '12px', color: '#a3b8b0', margin: '8px 0 20px', fontWeight: 600 }}>
+            Itinéraire :{' '}
+            <strong style={{ color: '#fff' }}>
+              {triathlonVehicles.map((v) => PHYSICS_PRESETS[v].label).join(' ➔ ')}
+            </strong>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+            <button
+              onClick={() => {
+                soundscape.init();
+                respawnAt('SUMMIT_ROAD', 'LONGBOARD');
+              }}
+              style={{
+                background: '#eb5e46',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '10px',
+                padding: '10px 18px',
+                fontWeight: 800,
+                fontSize: '13px',
+                cursor: 'pointer',
+              }}
+            >
+              ⛰️ Recommencer (Sommet)
+            </button>
+            <button
+              onClick={resetTriathlon}
+              style={{
+                background: 'rgba(255,255,255,0.12)',
+                color: '#f4f1ea',
+                border: 'none',
+                borderRadius: '10px',
+                padding: '10px 16px',
+                fontWeight: 700,
+                fontSize: '13px',
+                cursor: 'pointer',
+              }}
+            >
+              Fermer ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Contextual Interaction Prompt Pill */}
       <div
         ref={promptDomRef}
@@ -379,6 +547,21 @@ export const HudOverlay: React.FC = () => {
               >
                 17:30
               </span>
+              {triathlonPB < 999 && (
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    color: '#ffd166',
+                    background: 'rgba(255, 209, 102, 0.15)',
+                    padding: '2px 7px',
+                    borderRadius: '5px',
+                    border: '1px solid rgba(255, 209, 102, 0.35)',
+                  }}
+                >
+                  🏆 PB: {triathlonPB.toFixed(1)}s
+                </span>
+              )}
             </div>
           </div>
 

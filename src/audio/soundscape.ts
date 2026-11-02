@@ -289,6 +289,28 @@ class BorealSoundscape {
     });
   }
 
+  public triggerFinishFanfare() {
+    if (!this.initialized || !this.ctx || !this.masterGain || this.isMuted) return;
+    const now = this.ctx.currentTime;
+    // Triumphant Boreal Pentatonic Fanfare (C4, G4, C5, E5, G5, B5, C6)
+    const notes = [261.63, 392.0, 523.25, 659.25, 783.99, 987.77, 1046.5];
+    notes.forEach((freq, idx) => {
+      if (!this.ctx || !this.masterGain) return;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = idx === notes.length - 1 ? 'triangle' : 'sine';
+      const t0 = now + idx * 0.065;
+      osc.frequency.setValueAtTime(freq, t0);
+      gain.gain.setValueAtTime(0.001, t0);
+      gain.gain.linearRampToValueAtTime(0.16 / Math.sqrt(idx + 1), t0 + 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0005, t0 + 1.25);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(t0);
+      osc.stop(t0 + 1.3);
+    });
+  }
+
   public triggerPaddleSplash() {
     if (!this.initialized || !this.ctx || !this.noiseBuffer || !this.masterGain || this.isMuted) return;
     const now = this.ctx.currentTime;
