@@ -451,3 +451,194 @@ export function sampleTerrain(x: number, z: number, outNormal: THREE.Vector3): T
 
   return _sampleResult;
 }
+
+// ============================================================================
+// WP 3.5: O(1) SPATIAL HASH OBSTACLE SYSTEM (TREES & ROCKS COLLISIONS)
+// ============================================================================
+
+export interface TreeObstacle {
+  x: number;
+  y: number;
+  z: number;
+  scale: number;
+  scaleY: number;
+  rotY: number;
+  radius: number;
+}
+
+export interface RockObstacle {
+  x: number;
+  y: number;
+  z: number;
+  sx: number;
+  sy: number;
+  sz: number;
+  rx: number;
+  ry: number;
+  rz: number;
+  radius: number;
+}
+
+export interface SpatialObstacle {
+  x: number;
+  z: number;
+  radius: number;
+  kind: 'TREE' | 'ROCK';
+}
+
+export const FOREST_TREES: TreeObstacle[] = [];
+export const CANYON_ROCKS: RockObstacle[] = [];
+
+const HASH_CELL_SIZE = 10.0;
+const HASH_COLS = Math.ceil(TERRAIN_WIDTH / HASH_CELL_SIZE) + 2;
+const HASH_ROWS = Math.ceil(TERRAIN_LENGTH / HASH_CELL_SIZE) + 2;
+const spatialBuckets: SpatialObstacle[][] = Array.from(
+  { length: HASH_COLS * HASH_ROWS },
+  () => []
+);
+
+function getBucketIndex(x: number, z: number): number {
+  const cx = THREE.MathUtils.clamp(
+    Math.floor((x + TERRAIN_WIDTH * 0.5) / HASH_CELL_SIZE),
+    0,
+    HASH_COLS - 1
+  );
+  const cz = THREE.MathUtils.clamp(
+    Math.floor((z + TERRAIN_LENGTH * 0.5) / HASH_CELL_SIZE),
+    0,
+    HASH_ROWS - 1
+  );
+  return cz * HASH_COLS + cx;
+}
+
+function initForestAndRockObstacles() {
+  // 1. Deterministic Boreal Pines (up to sub-alpine tree line at Y = 172m)
+  for (let i = 0; i < 1450; i++) {
+    const rx = ((Math.sin(i * 127.1) * 43758.5453) % 1 + 1) % 1;
+    const rz = ((Math.sin(i * 311.7) * 43758.5453) % 1 + 1) % 1;
+    const x = (rx - 0.5) * (TERRAIN_WIDTH - 24);
+    const z = (rz - 0.5) * (TERRAIN_LENGTH - 30);
+
+    // Clear Lakeside Camp & Summit Firewatch Tower zones
+    if (Math.hypot(x - -10, z - 240) < 14) continue;
+    if (Math.hypot(x - 0, z - -475) < 17) continue;
+
+    const gx = Math.round((x / TERRAIN_WIDTH + 0.5) * GRID_SEGMENTS_X);
+    const gz = Math.round((z / TERRAIN_LENGTH + 0.5) * GRID_SEGMENTS_Z);
+    const sCode = surfaceGrid[gz * COLS + gx];
+    const y = getTerrainHeightOnly(x, z);
+
+    if (sCode === 0 && y > WATER_LEVEL + 1.5 && y < 172) {
+      const scale = 0.82 + ((i * 17) % 12) * 0.11;
+      const scaleY = scale * (0.95 + (i % 5) * 0.08);
+      const rotY = (i * 1.3) % (Math.PI * 2);
+      const radius = 0.42 * scale;
+
+      FOREST_TREES.push({ x, y, z, scale, scaleY, rotY, radius });
+      spatialBuckets[getBucketIndex(x, z)].push({ x, z, radius, kind: 'TREE' });
+    }
+  }
+
+  // 2. Deterministic Granite Boulders
+  for (let i = 0; i < 520; i++) {
+    const rx = ((Math.sin(i * 517.3 + 9) * 43758.5453) % 1 + 1) % 1;
+    const rz = ((Math.sin(i * 811.1 + 3) * 43758.5453) % 1 + 1) % 1;
+    const x = (rx - 0.5) * (TERRAIN_WIDTH - 24);
+    const z = (rz - 0.5) * (TERRAIN_LENGTH - 30);
+
+    if (Math.hypot(x - -10, z - 240) < 12) continue;
+    if (Math.hypot(x - 0, z - -475) < 15) continue;
+
+    const gx = Math.round((x / TERRAIN_WIDTH + 0.5) * GRID_SEGMENTS_X);
+    const gz = Math.round((z / TERRAIN_LENGTH + 0.5) * GRID_SEGMENTS_Z);
+    const sCode = surfaceGrid[gz * COLS + gx];
+    const y = getTerrainHeightOnly(x, z);
+
+    if ((sCode === 0 || sCode === 3 || sCode === 4) && y > WATER_LEVEL + 0.25) {
+      const sx = 0.6 + ((i * 13) % 9) * 0.18;
+      const sy = sx * (0.6 + ((i * 7) % 5) * 0.12);
+      const sz = sx * 0.9;
+      const radius = sx * 0.72;
+
+      CANYON_ROCKS.push({
+        x,
+        y: y + sy * 0.25,
+        z,
+        sx,
+        sy,
+        sz,
+        rx: (i * 0.4) % 1,
+        ry: (i * 1.9) % 6,
+        rz: (i * 0.3) % 1,
+        radius,
+      });
+      spatialBuckets[getBucketIndex(x, z)].push({ x, z, radius, kind: 'ROCK' });
+    }
+  }
+}
+initForestAndRockObstacles();
+
+export interface ObstacleHitResult {
+  hit: boolean;
+  pushX: number;
+  pushZ: number;
+  normalX: number;
+  normalZ: number;
+  kind: 'TREE' | 'ROCK';
+}
+
+const _hitResult: ObstacleHitResult = {
+  hit: false,
+  pushX: 0,
+  pushZ: 0,
+  normalX: 0,
+  normalZ: 1,
+  kind: 'TREE',
+};
+
+/**
+ * O(1) Zero-Allocation 3x3 Neighborhood Spatial Hash Collision Query for useFrame.
+ */
+export function queryObstacleCollision(
+  x: number,
+  z: number,
+  playerRadius: number
+): ObstacleHitResult {
+  _hitResult.hit = false;
+  _hitResult.pushX = 0;
+  _hitResult.pushZ = 0;
+
+  const baseCx = Math.floor((x + TERRAIN_WIDTH * 0.5) / HASH_CELL_SIZE);
+  const baseCz = Math.floor((z + TERRAIN_LENGTH * 0.5) / HASH_CELL_SIZE);
+
+  for (let dz = -1; dz <= 1; dz++) {
+    const cz = baseCz + dz;
+    if (cz < 0 || cz >= HASH_ROWS) continue;
+    for (let dx = -1; dx <= 1; dx++) {
+      const cx = baseCx + dx;
+      if (cx < 0 || cx >= HASH_COLS) continue;
+      const bucket = spatialBuckets[cz * HASH_COLS + cx];
+      for (let i = 0; i < bucket.length; i++) {
+        const obs = bucket[i];
+        const ox = x - obs.x;
+        const oz = z - obs.z;
+        const minDist = playerRadius + obs.radius;
+        const dSq = ox * ox + oz * oz;
+        if (dSq < minDist * minDist && dSq > 0.00001) {
+          const dist = Math.sqrt(dSq);
+          const nx = ox / dist;
+          const nz = oz / dist;
+          const penetration = minDist - dist;
+          _hitResult.hit = true;
+          _hitResult.pushX += nx * penetration;
+          _hitResult.pushZ += nz * penetration;
+          _hitResult.normalX = nx;
+          _hitResult.normalZ = nz;
+          _hitResult.kind = obs.kind;
+        }
+      }
+    }
+  }
+
+  return _hitResult;
+}

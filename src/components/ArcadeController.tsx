@@ -20,6 +20,7 @@ import {
   getTerrainHeightOnly,
   FALLEN_LOGS,
   getRiverCurrentVector,
+  queryObstacleCollision,
 } from '../world/terrainData';
 import {
   TRANSITION_STATIONS,
@@ -130,10 +131,14 @@ export const ArcadeController: React.FC = () => {
     bounceVel: 0,
     prevSteer: 0,
     hopCooldown: 0,
+    crashCooldown: 0,
+    pushTimer: 0,
+    pushAnimTimer: 0,
+    driftCharge: 0,
     walkBob: 0,
     pedalPhase: 0,
     wheelAngle: 0,
-    prevGroundY: 124,
+    prevGroundY: 210,
     prevClimbVel: 0,
     headYaw: 0,
     headPitch: 0,
@@ -336,6 +341,9 @@ export const ArcadeController: React.FC = () => {
     const elapsed = state.clock.elapsedTime;
 
     if (sp.hopCooldown > 0) sp.hopCooldown -= dt;
+    if (sp.crashCooldown > 0) sp.crashCooldown -= dt;
+    if (sp.pushTimer > 0) sp.pushTimer -= dt;
+    if (sp.pushAnimTimer > 0) sp.pushAnimTimer = Math.max(0, sp.pushAnimTimer - dt);
     if (p.emoteTimer > 0) p.emoteTimer = Math.max(0, p.emoteTimer - dt);
 
     // --- GAMEPAD POLLING & DISCOVERY ---
@@ -648,7 +656,7 @@ export const ArcadeController: React.FC = () => {
       const groundedThreshold = 0.25;
       p.isGrounded = p.position.y <= effectiveGroundY + groundedThreshold && p.velocity.y <= 1.5;
 
-      // 2. Steering & Heading Vectors (Snappy turn response at all speeds!)
+      // 2. Steering & Speed-Dependent Turn Radius (WP 3.5 Anti-YOLO Mastery Curve!)
       const wantsDrift =
         (mode === 'LONGBOARD' &&
           (inp.shiftDrift ||
@@ -657,16 +665,26 @@ export const ArcadeController: React.FC = () => {
             (wantsHop && Math.abs(steerInput) >= 0.28))) ||
         (mode === 'BIKE' && (inp.shiftDrift || padDriftBtn || isBraking) && Math.abs(steerInput) > 0.1);
 
+      const wasDrifting = p.isDrifting;
       p.isDrifting = p.isGrounded && wantsDrift && p.speed > 5.5;
       if (p.isDrifting) {
+        sp.driftCharge = Math.min(1.2, sp.driftCharge + dt);
         triggerHaptic(pad, 65, 0.12, 0.32);
       }
 
-      const speedFactor =
-        mode === 'WALK' || mode === 'CANOE'
-          ? 1.0
-          : THREE.MathUtils.clamp(p.speed / 3.5, 0.72, 1.2);
-      const driftTurnBoost = p.isDrifting ? 1.45 : 1.0;
+      // At high speeds (> 8 m/s), non-drifting turn radius stiffens with inertia!
+      // You must either brake before a hairpin OR throw a powerslide (driftTurnBoost) to whip around!
+      let speedFactor = 1.0;
+      if (mode === 'LONGBOARD' || mode === 'BIKE') {
+        const lowSpeedRamp = THREE.MathUtils.clamp(p.speed / 3.2, 0.72, 1.05);
+        const highSpeedStiffening = THREE.MathUtils.lerp(
+          1.05,
+          0.44,
+          THREE.MathUtils.clamp((p.speed - 8.5) / 23.0, 0, 1)
+        );
+        speedFactor = p.speed < 8.5 ? lowSpeedRamp : highSpeedStiffening;
+      }
+      const driftTurnBoost = p.isDrifting ? 2.15 : 1.0;
       p.yaw += steerInput * preset.turnSpeed * speedFactor * driftTurnBoost * dt;
 
       _forward.set(Math.sin(p.yaw), 0, Math.cos(p.yaw)).normalize();
@@ -678,26 +696,53 @@ export const ArcadeController: React.FC = () => {
       let forwardVel = _velHorizontal.dot(_forward);
       let lateralVel = _velHorizontal.dot(_right);
 
-      // 4. Slope Gravity Projection
+      // Drift Exit Boost: releasing a sustained powerslide snaps the wheels back into traction with a speed kick!
+      if (wasDrifting && !p.isDrifting && sp.driftCharge > 0.32 && p.isGrounded && forwardVel > 6.0) {
+        forwardVel = Math.min(preset.maxSpeed, forwardVel + Math.min(2.6, sp.driftCharge * 2.4));
+        sp.driftCharge = 0;
+        triggerHaptic(pad, 75, 0.35, 0.45);
+      } else if (!p.isDrifting) {
+        sp.driftCharge = Math.max(0, sp.driftCharge - dt * 2.5);
+      }
+
+      // 4. Slope Gravity Projection (with Longboard Aero Tuck boost!)
       _slopeDown.set(_groundNormal.x, 0, _groundNormal.z);
       const slopeStrength = _slopeDown.length();
       p.slopeAngle = Math.asin(THREE.MathUtils.clamp(slopeStrength, 0, 1)) * (180 / Math.PI);
 
+      const isLongboardAeroTuck =
+        mode === 'LONGBOARD' && accelInput > 0.2 && forwardVel > 9.5 && !p.isDrifting;
+
       if (p.isGrounded && !isOnWater && !onTowerDeck && mode !== 'WALK') {
-        const gravityAccel = 22.0 * preset.gravityScale;
-        forwardVel += _slopeDown.dot(_forward) * gravityAccel * dt;
+        const downhillDot = _slopeDown.dot(_forward);
+        const tuckGravityBoost = isLongboardAeroTuck && downhillDot > 0 ? 1.26 : 1.0;
+        const gravityAccel = 22.0 * preset.gravityScale * tuckGravityBoost;
+        forwardVel += downhillDot * gravityAccel * dt;
         lateralVel += _slopeDown.dot(_right) * gravityAccel * 0.45 * dt;
       }
 
-      // 5. Mode-Specific Propulsion
+      // 5. Mode-Specific Authentic Propulsion (WP 3.5)
       if (mode === 'LONGBOARD') {
-        if (accelInput > 0 && forwardVel < preset.maxSpeed) {
-          forwardVel += preset.accelForce * accelInput * dt;
+        // Authentic Rhythmic Foot-Pushing below 12.0 m/s (~43 km/h); above that, rely on gravity, Aero Tuck & Carve Pumping!
+        if (
+          accelInput > 0.15 &&
+          p.isGrounded &&
+          !p.isDrifting &&
+          forwardVel < 12.0 &&
+          sp.pushTimer <= 0
+        ) {
+          const pushKick = 3.4 * accelInput * (p.surface === 'ASPHALT' ? 1.0 : 0.45);
+          forwardVel = Math.min(12.8, forwardVel + pushKick);
+          sp.pushTimer = 0.56;
+          sp.pushAnimTimer = 0.38;
+          soundscape.triggerFootPushSound();
+          triggerHaptic(pad, 55, 0.2, 0.25);
         }
+
         const steerDelta = Math.abs(steerInput - sp.prevSteer);
         p.isPumping = p.isGrounded && !p.isDrifting && Math.abs(steerInput) > 0 && forwardVel > 3.0;
         if (steerDelta > 0.5 && p.isGrounded && forwardVel > 2.5 && forwardVel < preset.maxSpeed) {
-          forwardVel += 1.15;
+          forwardVel += p.surface === 'ASPHALT' ? 1.25 : 0.4;
         }
         if (wantsHop && !p.isDrifting && p.isGrounded && sp.hopCooldown <= 0) {
           p.velocity.y = preset.hopImpulse;
@@ -707,10 +752,17 @@ export const ArcadeController: React.FC = () => {
           soundscape.triggerHopSound();
           triggerHaptic(pad, 80, 0.4, 0.3);
         }
+        // Off-road urethane wheel chatter when skating on grass/dirt/rock
+        if (p.isGrounded && p.surface !== 'ASPHALT' && p.speed > 3.0) {
+          sp.bounceVel += Math.sin(elapsed * 34) * 0.55;
+          triggerHaptic(pad, 50, 0.15, 0.3);
+        }
       } else if (mode === 'BIKE') {
         p.isPumping = false;
-        if (accelInput > 0 && forwardVel < preset.maxSpeed) {
-          forwardVel += preset.accelForce * accelInput * dt;
+        // Pedaling torque is strongest up to 19.5 m/s (70 km/h); steeper downhill carries you up to 31 m/s
+        if (accelInput > 0 && forwardVel < 19.5) {
+          const pedalEfficiency = THREE.MathUtils.clamp(1.15 - forwardVel / 24.0, 0.28, 1.0);
+          forwardVel += preset.accelForce * pedalEfficiency * accelInput * dt;
         }
         sp.pedalPhase += Math.max(0, forwardVel) * dt * 0.85;
         if (wantsHop && p.isGrounded && sp.hopCooldown <= 0) {
@@ -768,16 +820,22 @@ export const ArcadeController: React.FC = () => {
 
       sp.prevSteer = steerInput;
 
-      // 6. Surface Friction & Braking
+      // 6. Surface Friction, Off-Road Penalties & Braking
       let surfaceDragMultiplier = 1.0;
       if (mode === 'LONGBOARD') {
-        if (p.surface === 'ASPHALT') surfaceDragMultiplier = 0.75;
-        else if (p.surface === 'DIRT') surfaceDragMultiplier = 2.4;
-        else if (p.surface === 'GRASS' || p.surface === 'SAND') surfaceDragMultiplier = 4.2;
-        else if (p.surface === 'WATER') surfaceDragMultiplier = 8.0;
+        if (p.surface === 'ASPHALT') {
+          surfaceDragMultiplier = isLongboardAeroTuck ? 0.36 : 0.62;
+        } else if (p.surface === 'DIRT') {
+          surfaceDragMultiplier = 3.2;
+        } else if (p.surface === 'GRASS' || p.surface === 'SAND' || p.surface === 'ROCK') {
+          surfaceDragMultiplier = 6.8;
+        } else if (p.surface === 'WATER') {
+          surfaceDragMultiplier = 9.5;
+        }
       } else if (mode === 'BIKE') {
-        if (p.surface === 'DIRT' || p.surface === 'ASPHALT') surfaceDragMultiplier = 0.85;
-        else if (p.surface === 'GRASS' || p.surface === 'SAND') surfaceDragMultiplier = 1.65;
+        if (p.surface === 'DIRT' || p.surface === 'ASPHALT') surfaceDragMultiplier = 0.78;
+        else if (p.surface === 'GRASS' || p.surface === 'SAND' || p.surface === 'ROCK')
+          surfaceDragMultiplier = 1.95;
         else if (p.surface === 'WATER') surfaceDragMultiplier = 6.5;
       } else if (mode === 'CANOE') {
         surfaceDragMultiplier = isOnWater ? 0.65 : 6.5;
@@ -788,14 +846,17 @@ export const ArcadeController: React.FC = () => {
 
       if (isBraking && mode !== 'WALK') {
         if (forwardVel > 0.5) {
-          const brakeDecel = p.isDrifting ? 11.0 : 19.0;
+          const brakeDecel = p.isDrifting ? 12.5 : 21.0;
           forwardVel = Math.max(0, forwardVel - brakeDecel * Math.max(0.65, brakeInput) * dt);
         } else {
           forwardVel = THREE.MathUtils.damp(forwardVel, -3.5, 4, dt);
         }
       }
 
-      const activeGrip = p.isDrifting ? preset.driftGrip : preset.lateralGrip;
+      // Finite lateral tire/edge grip at high speeds creates natural cornering inertia
+      const highSpeedGripScale =
+        !p.isDrifting && p.speed > 14 ? THREE.MathUtils.lerp(1.0, 0.58, (p.speed - 14) / 20) : 1.0;
+      const activeGrip = (p.isDrifting ? preset.driftGrip : preset.lateralGrip) * highSpeedGripScale;
       lateralVel = THREE.MathUtils.damp(lateralVel, 0, activeGrip, dt);
       forwardVel = THREE.MathUtils.clamp(forwardVel, -6, preset.maxSpeed * 1.15);
 
@@ -844,6 +905,40 @@ export const ArcadeController: React.FC = () => {
       const halfL = TERRAIN_LENGTH * 0.47;
       p.position.x = THREE.MathUtils.clamp(p.position.x, -halfW, halfW);
       p.position.z = THREE.MathUtils.clamp(p.position.z, -halfL, halfL);
+
+      // 7b. WP 3.5: O(1) Spatial Hash Tree & Boulder Collisions (No more ghosting through forests!)
+      const obsHit = queryObstacleCollision(p.position.x, p.position.z, 0.46);
+      if (obsHit.hit && !onTowerDeck) {
+        p.position.x += obsHit.pushX;
+        p.position.z += obsHit.pushZ;
+
+        // Calculate inward impact speed against the obstacle normal
+        const inwardSpeed = -(p.velocity.x * obsHit.normalX + p.velocity.z * obsHit.normalZ);
+        if (inwardSpeed > 6.5 && sp.crashCooldown <= 0) {
+          // High-speed crash into pine trunk or boulder -> Tactile Wipeout Bounce!
+          p.velocity.x = (p.velocity.x + 1.65 * inwardSpeed * obsHit.normalX) * 0.42;
+          p.velocity.z = (p.velocity.z + 1.65 * inwardSpeed * obsHit.normalZ) * 0.42;
+          p.velocity.y = 3.8;
+          p.isGrounded = false;
+          p.speed = Math.hypot(p.velocity.x, p.velocity.z);
+          sp.bounceVel = -8.5;
+          sp.roll += obsHit.normalX >= 0 ? -0.65 : 0.65;
+          sp.crashCooldown = 0.45;
+          triggerPoofEffect(p.position);
+          soundscape.triggerObstacleCrashSound();
+          triggerHaptic(pad, 230, 1.0, 0.85);
+        } else if (inwardSpeed > 0) {
+          // Low-speed graze -> slide smoothly along obstacle tangent
+          p.velocity.x += inwardSpeed * obsHit.normalX;
+          p.velocity.z += inwardSpeed * obsHit.normalZ;
+          p.speed = Math.hypot(p.velocity.x, p.velocity.z);
+          if (inwardSpeed > 2.2 && sp.crashCooldown <= 0) {
+            sp.crashCooldown = 0.25;
+            soundscape.triggerHopSound();
+            triggerHaptic(pad, 80, 0.35, 0.25);
+          }
+        }
+      }
 
       const newTerrain = sampleTerrain(p.position.x, p.position.z, _groundNormal);
       const newOnWater = newTerrain.waterDepth > 0.2;
@@ -1076,8 +1171,8 @@ export const ArcadeController: React.FC = () => {
         leftLegRef.current.rotation.set(-0.4 - Math.sin(climbCycle) * 0.45, 0, 0.1);
         rightLegRef.current.rotation.set(-0.4 + Math.sin(climbCycle) * 0.45, 0, -0.1);
       } else if (mode === 'LONGBOARD') {
-        const isAeroTuck = p.speed > 21 && !p.isDrifting;
-        const targetTorsoPitch = isAeroTuck ? 0.55 : 0.12;
+        const isAeroTuck = p.speed > 12.5 && accelInput > 0.2 && !p.isDrifting;
+        const targetTorsoPitch = isAeroTuck ? 0.58 : sp.pushAnimTimer > 0 ? 0.28 : 0.12;
         const targetTorsoYaw = steerInput * 0.28;
         torsoRef.current.rotation.x = THREE.MathUtils.damp(
           torsoRef.current.rotation.x,
@@ -1101,7 +1196,13 @@ export const ArcadeController: React.FC = () => {
           rightArmRef.current.rotation.set(0.2 - steerInput * 0.3, 0, -0.85 - wave);
         }
         leftLegRef.current.rotation.set(-0.22, 0, 0.12);
-        rightLegRef.current.rotation.set(0.22, 0, -0.12);
+        // Animate Right Leg Foot-Push stroke against the asphalt when pushing!
+        if (sp.pushAnimTimer > 0) {
+          const pushArc = Math.sin((sp.pushAnimTimer / 0.38) * Math.PI);
+          rightLegRef.current.rotation.set(0.22 + pushArc * 0.95, 0, -0.28);
+        } else {
+          rightLegRef.current.rotation.set(0.22, 0, -0.12);
+        }
       } else if (mode === 'BIKE') {
         torsoRef.current.rotation.set(0.38, steerInput * 0.15, 0);
         leftArmRef.current.rotation.set(-0.95 + steerInput * 0.18, 0, 0.22);

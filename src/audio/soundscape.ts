@@ -334,6 +334,64 @@ class BorealSoundscape {
     src.start(now, Math.random() * 2, 0.38);
   }
 
+  public triggerFootPushSound() {
+    if (!this.initialized || !this.ctx || !this.noiseBuffer || !this.masterGain || this.isMuted) return;
+    const now = this.ctx.currentTime;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(520, now);
+    filter.frequency.exponentialRampToValueAtTime(240, now + 0.14);
+    filter.Q.value = 1.6;
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.005, now);
+    gain.gain.linearRampToValueAtTime(0.14, now + 0.025);
+    gain.gain.exponentialRampToValueAtTime(0.002, now + 0.16);
+
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+    src.start(now, Math.random() * 2, 0.17);
+  }
+
+  public triggerObstacleCrashSound() {
+    if (!this.initialized || !this.ctx || !this.noiseBuffer || !this.masterGain || this.isMuted) return;
+    const now = this.ctx.currentTime;
+
+    // Low woody/stony impact thud
+    const osc = this.ctx.createOscillator();
+    const oscGain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(145, now);
+    osc.frequency.exponentialRampToValueAtTime(38, now + 0.22);
+    oscGain.gain.setValueAtTime(0.01, now);
+    oscGain.gain.linearRampToValueAtTime(0.28, now + 0.015);
+    oscGain.gain.exponentialRampToValueAtTime(0.002, now + 0.24);
+    osc.connect(oscGain);
+    oscGain.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + 0.25);
+
+    // Foliage / bark crunch burst
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1100, now);
+    filter.frequency.exponentialRampToValueAtTime(220, now + 0.25);
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.01, now);
+    gain.gain.linearRampToValueAtTime(0.22, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.004, now + 0.26);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+    src.start(now, Math.random() * 2, 0.28);
+  }
+
   private triggerSpatialBirdCall(bird: WildlifeSpecies) {
     if (!this.initialized || !this.ctx || !this.masterGain || this.isMuted) return;
     const p = mutablePhysics;

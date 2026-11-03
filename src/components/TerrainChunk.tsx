@@ -12,6 +12,8 @@ import {
   asphaltCurve,
   dirtCurve,
   FALLEN_LOGS,
+  FOREST_TREES,
+  CANYON_ROCKS,
   getTerrainHeightOnly,
 } from '../world/terrainData';
 import { simplex2D } from '../math/noise';
@@ -435,52 +437,22 @@ export const TerrainChunk: React.FC = () => {
     const dummy = new THREE.Object3D();
     const cols = GRID_SEGMENTS_X + 1;
 
-    for (let i = 0; i < 1350; i++) {
-      const rx = ((Math.sin(i * 127.1) * 43758.5453) % 1 + 1) % 1;
-      const rz = ((Math.sin(i * 311.7) * 43758.5453) % 1 + 1) % 1;
-      const x = (rx - 0.5) * (TERRAIN_WIDTH - 24);
-      const z = (rz - 0.5) * (TERRAIN_LENGTH - 30);
-
-      if (Math.hypot(x - -10, z - 240) < 13) continue;
-      if (Math.hypot(x - 0, z - -475) < 16) continue;
-
-      const gx = Math.round((x / TERRAIN_WIDTH + 0.5) * GRID_SEGMENTS_X);
-      const gz = Math.round((z / TERRAIN_LENGTH + 0.5) * GRID_SEGMENTS_Z);
-      const sCode = surfaceGrid[gz * cols + gx];
-      const y = getTerrainHeightOnly(x, z);
-
-      if (sCode === 0 && y > WATER_LEVEL + 1.5 && y < 120) {
-        const scale = 0.82 + ((i * 17) % 12) * 0.11;
-        dummy.position.set(x, y, z);
-        dummy.rotation.set(0, (i * 1.3) % (Math.PI * 2), 0);
-        dummy.scale.set(scale, scale * (0.95 + (i % 5) * 0.08), scale);
-        dummy.updateMatrix();
-        trees.push(dummy.matrix.clone());
-      }
+    for (let i = 0; i < FOREST_TREES.length; i++) {
+      const t = FOREST_TREES[i];
+      dummy.position.set(t.x, t.y, t.z);
+      dummy.rotation.set(0, t.rotY, 0);
+      dummy.scale.set(t.scale, t.scaleY, t.scale);
+      dummy.updateMatrix();
+      trees.push(dummy.matrix.clone());
     }
 
-    for (let i = 0; i < 520; i++) {
-      const rx = ((Math.sin(i * 517.3 + 9) * 43758.5453) % 1 + 1) % 1;
-      const rz = ((Math.sin(i * 811.1 + 3) * 43758.5453) % 1 + 1) % 1;
-      const x = (rx - 0.5) * (TERRAIN_WIDTH - 24);
-      const z = (rz - 0.5) * (TERRAIN_LENGTH - 30);
-      if (Math.hypot(x - -10, z - 240) < 10) continue;
-      if (Math.hypot(x - 0, z - -475) < 14) continue;
-
-      const gx = Math.round((x / TERRAIN_WIDTH + 0.5) * GRID_SEGMENTS_X);
-      const gz = Math.round((z / TERRAIN_LENGTH + 0.5) * GRID_SEGMENTS_Z);
-      const sCode = surfaceGrid[gz * cols + gx];
-      const y = getTerrainHeightOnly(x, z);
-
-      if ((sCode === 0 || sCode === 3 || sCode === 4) && y > WATER_LEVEL + 0.25) {
-        const sx = 0.6 + ((i * 13) % 9) * 0.18;
-        const sy = sx * (0.6 + ((i * 7) % 5) * 0.12);
-        dummy.position.set(x, y + sy * 0.25, z);
-        dummy.rotation.set((i * 0.4) % 1, (i * 1.9) % 6, (i * 0.3) % 1);
-        dummy.scale.set(sx, sy, sx * 0.9);
-        dummy.updateMatrix();
-        rocks.push(dummy.matrix.clone());
-      }
+    for (let i = 0; i < CANYON_ROCKS.length; i++) {
+      const r = CANYON_ROCKS[i];
+      dummy.position.set(r.x, r.y, r.z);
+      dummy.rotation.set(r.rx, r.ry, r.rz);
+      dummy.scale.set(r.sx, r.sy, r.sz);
+      dummy.updateMatrix();
+      rocks.push(dummy.matrix.clone());
     }
 
     for (let i = 0; i < 2800; i++) {
@@ -494,7 +466,7 @@ export const TerrainChunk: React.FC = () => {
       const sCode = surfaceGrid[gz * cols + gx];
       const y = getTerrainHeightOnly(x, z);
 
-      if (sCode === 0 && y > WATER_LEVEL + 0.8 && y < 115) {
+      if (sCode === 0 && y > WATER_LEVEL + 0.8 && y < 168) {
         const s = 0.45 + ((i * 11) % 7) * 0.08;
         dummy.position.set(x, y + s * 0.4, z);
         dummy.rotation.set(0, (i * 2.1) % (Math.PI * 2), 0);
