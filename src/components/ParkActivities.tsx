@@ -20,7 +20,7 @@ const _zipTmp = new THREE.Vector3();
  * PHASE 3: Canadian Park Activities & Exploration Props
  * - Step 3.1: Contextual Wooden Trailhead Racks & Lakeside Canoe Dock Rack
  * - Step 3.2: 4 Animated Low-Poly Wildlife Biomes with acoustic sonar rings
- * - Step 3.3: Bouldering Rock Crag + Summit Firewatch Lookout Tower + 340m Zipline Cable
+ * - Step 3.3: Summit Firewatch Lookout Tower + 700m Zipline Cable
  */
 export const ParkActivities: React.FC = () => {
   const towerWindowMatRef = useRef<THREE.MeshStandardMaterial>(null);
@@ -38,23 +38,6 @@ export const ParkActivities: React.FC = () => {
     }
     const curve = new THREE.CatmullRomCurve3(pts);
     return new THREE.TubeGeometry(curve, 64, 0.045, 6, false);
-  }, []);
-
-  // Colorful Bouldering Holds on the South Cliff/Tower Crag
-  const climbingHolds = useMemo(() => {
-    const holds: { pos: [number, number, number]; color: string }[] = [];
-    const holdColors = ['#ef476f', '#ffd166', '#06d6a0', '#118ab2', '#f78c6b'];
-    for (let i = 0; i < 34; i++) {
-      const hFrac = i / 33;
-      const y = TOWER_BASE_Y + 0.8 + hFrac * (TOWER_DECK_HEIGHT - 0.5);
-      const x = TOWER_BASE_X + Math.sin(i * 1.7) * 1.8;
-      const z = TOWER_BASE_Z + 4.35 + Math.cos(i * 2.3) * 0.15;
-      holds.push({
-        pos: [x, y, z],
-        color: holdColors[i % holdColors.length],
-      });
-    }
-    return holds;
   }, []);
 
   useFrame((state) => {
@@ -150,14 +133,8 @@ export const ParkActivities: React.FC = () => {
         </group>
       ))}
 
-      {/* --- STEP 3.3: Summit Firewatch Lookout Tower & Bouldering Crag --- */}
+      {/* --- STEP 3.3: Summit Firewatch Lookout Tower --- */}
       <group position={[TOWER_BASE_X, TOWER_BASE_Y, TOWER_BASE_Z]}>
-        {/* Steep Bouldering Rock Crag on South Face */}
-        <mesh castShadow receiveShadow position={[0, TOWER_DECK_HEIGHT * 0.5 - 0.5, 2.4]}>
-          <boxGeometry args={[5.4, TOWER_DECK_HEIGHT, 3.8]} />
-          <meshStandardMaterial color="#555d66" flatShading roughness={0.92} />
-        </mesh>
-
         {/* 4 Heavy Timber Support Legs */}
         {[
           [-3.2, -3.2],
@@ -215,15 +192,7 @@ export const ParkActivities: React.FC = () => {
         </mesh>
       </group>
 
-      {/* Colorful Bouldering Holds on the Cliff Wall */}
-      {climbingHolds.map((h, i) => (
-        <mesh key={i} position={h.pos} castShadow>
-          <dodecahedronGeometry args={[0.24, 0]} />
-          <meshStandardMaterial color={h.color} flatShading />
-        </mesh>
-      ))}
-
-      {/* --- 340m Zipline Cable, Anchor Posts & Pulley Trolley --- */}
+      {/* --- 700m Zipline Cable, Anchor Posts & Pulley Trolley --- */}
       <mesh geometry={ziplineGeometry}>
         <meshStandardMaterial color="#cbd5e1" metalness={0.6} roughness={0.3} />
       </mesh>

@@ -25,7 +25,6 @@ import {
 import {
   TRANSITION_STATIONS,
   WILDLIFE_SPECIES,
-  CLIMB_ZONE,
   TOWER_BASE_X,
   TOWER_BASE_Y,
   TOWER_BASE_Z,
@@ -152,7 +151,6 @@ export const ArcadeController: React.FC = () => {
   // Spawn / Teleport logic (1,000m Boreal Canyon coordinates)
   useEffect(() => {
     const p = mutablePhysics;
-    p.stamina = 1.0;
 
     if (spawnTarget === 'SUMMIT_ROAD') {
       p.specialState = 'NONE';
@@ -232,21 +230,7 @@ export const ArcadeController: React.FC = () => {
       return;
     }
 
-    // 4. Check proximity to Bouldering Wall
-    const distToClimb = Math.hypot(
-      p.position.x - CLIMB_ZONE.centerX,
-      p.position.z - CLIMB_ZONE.centerZ
-    );
-    if (distToClimb < CLIMB_ZONE.radius + 1.8 && p.position.y < CLIMB_ZONE.maxY) {
-      useGameStore.getState().setMode('WALK', true);
-      p.specialState = 'CLIMBING';
-      p.position.z = CLIMB_ZONE.centerZ + 1.95;
-      p.yaw = Math.PI;
-      p.velocity.set(0, 0, 0);
-      return;
-    }
-
-    // 5. Check proximity to any Trailhead Rack / Canoe Dock
+    // 4. Check proximity to any Trailhead Rack / Canoe Dock
     for (const st of TRANSITION_STATIONS) {
       if (p.position.distanceTo(st.position) < 6.5) {
         const nextMode = currentMode === st.targetMode ? st.altMode : st.targetMode;
@@ -505,26 +489,16 @@ export const ArcadeController: React.FC = () => {
       promptText = '🔥 Warming by the Campfire • [C] Chime / Wave • [E / Space] Stand Up';
     } else if (p.specialState === 'ZIPLINE') {
       promptText = '[Space / E] Drop from Zipline';
-    } else if (p.specialState === 'CLIMBING') {
-      promptText = '[WASD] Climb Rock Crag • [Space] Dyno Leap • [E] Let Go';
     } else if (distToFire < 6.5) {
       promptText = '🔥 [E] Sit by the Cozy Campfire';
     } else if (p.position.distanceTo(ZIPLINE_START) < 6.5) {
       promptText = '⚡ [E] Ride 700m Zipline to Lakeside Camp!';
     } else {
-      const distToClimb = Math.hypot(
-        p.position.x - CLIMB_ZONE.centerX,
-        p.position.z - CLIMB_ZONE.centerZ
-      );
-      if (distToClimb < CLIMB_ZONE.radius + 1.8 && p.position.y < CLIMB_ZONE.maxY - 1) {
-        promptText = '🧗 [E] Climb Bouldering Wall to Firewatch Tower';
-      } else {
-        for (const st of TRANSITION_STATIONS) {
-          if (p.position.distanceTo(st.position) < 6.5) {
-            const nextM = mode === st.targetMode ? st.altMode : st.targetMode;
-            promptText = `🎒 [E] ${st.label}: Switch to ${PHYSICS_PRESETS[nextM].label}`;
-            break;
-          }
+      for (const st of TRANSITION_STATIONS) {
+        if (p.position.distanceTo(st.position) < 6.5) {
+          const nextM = mode === st.targetMode ? st.altMode : st.targetMode;
+          promptText = `🎒 [E] ${st.label}: Switch to ${PHYSICS_PRESETS[nextM].label}`;
+          break;
         }
       }
     }
@@ -574,53 +548,8 @@ export const ArcadeController: React.FC = () => {
         p.isDrifting = false;
       }
     }
-    // --- SPECIAL STATE 2: BOULDERING / ROCK CLIMBING (Step 3.3) ---
-    else if (p.specialState === 'CLIMBING') {
-      p.yaw = Math.PI;
-      _forward.set(0, 0, -1);
-      p.forward.copy(_forward);
-
-      const climbSpeed = 4.6;
-      const vx = -steerInput * climbSpeed * 0.85;
-      let vy = moveInput * climbSpeed;
-
-      if (wantsHop && sp.hopCooldown <= 0 && p.stamina > 0.18) {
-        vy = 11.5;
-        p.stamina = Math.max(0, p.stamina - 0.18);
-        sp.hopCooldown = 0.45;
-        soundscape.triggerHopSound();
-        triggerHaptic(pad, 100, 0.5, 0.4);
-      }
-
-      p.position.x = THREE.MathUtils.clamp(
-        p.position.x + vx * dt,
-        CLIMB_ZONE.centerX - 2.3,
-        CLIMB_ZONE.centerX + 2.3
-      );
-      p.position.y += vy * dt;
-      p.position.z = CLIMB_ZONE.centerZ + 1.95;
-      p.speed = Math.hypot(vx, vy);
-      sp.walkBob += p.speed * dt * 2.4;
-
-      const drainRate = p.speed > 0.2 ? 0.11 : 0.03;
-      p.stamina = Math.max(0, p.stamina - drainRate * dt);
-
-      if (p.position.y >= TOWER_BASE_Y + TOWER_DECK_HEIGHT) {
-        p.position.set(TOWER_BASE_X, TOWER_BASE_Y + TOWER_DECK_HEIGHT + 0.15, TOWER_BASE_Z + 2.5);
-        p.specialState = 'NONE';
-        p.stamina = 1.0;
-        p.yaw = 0;
-        soundscape.triggerDiscoveryChime();
-        triggerHaptic(pad, 120, 0.3, 0.6);
-      } else if (p.position.y <= CLIMB_ZONE.minY + 0.2 || p.stamina <= 0) {
-        p.specialState = 'NONE';
-        p.velocity.set(0, 0, 3);
-      }
-    }
     // --- STANDARD 4-STATE ARCADE SPHERE CONTROLLER ---
     else {
-      p.stamina = Math.min(1.0, p.stamina + 0.38 * dt);
-
       const terrain = sampleTerrain(p.position.x, p.position.z, _groundNormal);
       p.groundNormal.copy(_groundNormal);
       p.surface = terrain.surface;
@@ -641,20 +570,6 @@ export const ArcadeController: React.FC = () => {
         effectiveGroundY = TOWER_BASE_Y + TOWER_DECK_HEIGHT + 0.22;
         _groundNormal.set(0, 1, 0);
         p.groundNormal.set(0, 1, 0);
-      }
-
-      const distToClimb = Math.hypot(
-        p.position.x - CLIMB_ZONE.centerX,
-        p.position.z - (CLIMB_ZONE.centerZ + 1.9)
-      );
-      if (
-        mode === 'WALK' &&
-        (inp.forward || padMove > 0.2) &&
-        distToClimb < 2.2 &&
-        p.position.y < TOWER_BASE_Y + TOWER_DECK_HEIGHT - 2 &&
-        p.stamina > 0.3
-      ) {
-        p.specialState = 'CLIMBING';
       }
 
       const groundedThreshold = 0.28;
@@ -1089,8 +1004,6 @@ export const ArcadeController: React.FC = () => {
           ? 0.18 + Math.sin(elapsed * 1.8) * 0.05 // Looking warmly into the fire embers
           : !p.isGrounded && p.specialState === 'NONE'
           ? -0.22
-          : p.specialState === 'CLIMBING'
-          ? -0.45
           : mode === 'LONGBOARD' && p.speed > 20
           ? -0.25
           : Math.sin(elapsed * 1.6) * 0.04;
@@ -1176,13 +1089,6 @@ export const ArcadeController: React.FC = () => {
         rightArmRef.current.rotation.set(-2.75, 0, -0.25);
         leftLegRef.current.rotation.set(0.35 + Math.sin(elapsed * 6) * 0.18, 0, 0);
         rightLegRef.current.rotation.set(0.2 + Math.cos(elapsed * 6) * 0.18, 0, 0);
-      } else if (p.specialState === 'CLIMBING') {
-        const climbCycle = sp.walkBob;
-        torsoRef.current.rotation.set(-0.12, Math.sin(climbCycle) * 0.12, 0);
-        leftArmRef.current.rotation.set(-2.2 + Math.sin(climbCycle) * 0.55, 0, 0.3);
-        rightArmRef.current.rotation.set(-2.2 - Math.sin(climbCycle) * 0.55, 0, -0.3);
-        leftLegRef.current.rotation.set(-0.4 - Math.sin(climbCycle) * 0.45, 0, 0.1);
-        rightLegRef.current.rotation.set(-0.4 + Math.sin(climbCycle) * 0.45, 0, -0.1);
       } else if (mode === 'LONGBOARD') {
         const isAeroTuck = p.speed > 12.5 && accelInput > 0.2 && !p.isDrifting;
         const targetTorsoPitch = p.isDrifting
@@ -1249,7 +1155,7 @@ export const ArcadeController: React.FC = () => {
       }
 
       // Step 4.2: Override Right Arm with Joyful Hand Wave during Emote!
-      if (p.emoteTimer > 0 && p.specialState !== 'ZIPLINE' && p.specialState !== 'CLIMBING') {
+      if (p.emoteTimer > 0 && p.specialState !== 'ZIPLINE') {
         rightArmRef.current.rotation.set(
           -2.55,
           0,
@@ -1297,7 +1203,7 @@ export const ArcadeController: React.FC = () => {
       blobShadowRef.current.position.y = Math.max(-2.5, -airHeight + 0.035);
       const shadowMat = blobShadowRef.current.material as THREE.MeshBasicMaterial;
       shadowMat.opacity =
-        p.specialState === 'ZIPLINE' || p.specialState === 'CLIMBING'
+        p.specialState === 'ZIPLINE'
           ? 0.0
           : THREE.MathUtils.clamp((1.0 - airHeight * 0.22) * 0.36, 0.06, 0.36);
     }

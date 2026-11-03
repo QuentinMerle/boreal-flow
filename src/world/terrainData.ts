@@ -157,59 +157,64 @@ export const heightGrid = new Float32Array(COLS * ROWS);
 export const surfaceGrid = new Uint8Array(COLS * ROWS);
 // Surface codes: 0 = GRASS, 1 = ASPHALT, 2 = DIRT, 3 = ROCK, 4 = SAND, 5 = WATER
 
+/**
+ * Fast coarse-to-fine closest spline sample lookup (~20x faster than full linear scan).
+ */
+function findClosestSplineSample(
+  samples: SampledSplinePoint[],
+  x: number,
+  z: number,
+  zWindow: number
+): { distSq: number; sample: SampledSplinePoint } {
+  let bestIdx = 0;
+  let minDistSq = Infinity;
+  const len = samples.length;
+
+  // 1. Coarse pass (stride = 8)
+  for (let i = 0; i < len; i += 8) {
+    const s = samples[i];
+    const dz = s.z - z;
+    if (Math.abs(dz) > zWindow) continue;
+    const dx = s.x - x;
+    const dSq = dx * dx + dz * dz;
+    if (dSq < minDistSq) {
+      minDistSq = dSq;
+      bestIdx = i;
+    }
+  }
+
+  // 2. Local fine pass (±8 samples around best coarse hit)
+  const start = Math.max(0, bestIdx - 8);
+  const end = Math.min(len - 1, bestIdx + 8);
+  for (let i = start; i <= end; i++) {
+    const s = samples[i];
+    const dx = s.x - x;
+    const dz = s.z - z;
+    const dSq = dx * dx + dz * dz;
+    if (dSq < minDistSq) {
+      minDistSq = dSq;
+      bestIdx = i;
+    }
+  }
+
+  return { distSq: minDistSq, sample: samples[bestIdx] };
+}
+
 function evaluatePoint(x: number, z: number): {
   height: number;
   surfaceCode: number;
-  roadBlend: number;
-  dirtBlend: number;
 } {
   let rawH = computeRawMountainElevation(x, z);
   const smoothSlopeH = Math.max(0, computeSmoothSlopeElevation(z));
 
-  // 1. Find closest distance to Asphalt Road spline
-  let minRoadDistSq = Infinity;
-  for (let i = 0; i < asphaltSamples.length; i++) {
-    const s = asphaltSamples[i];
-    const dz = s.z - z;
-    if (Math.abs(dz) > 34) continue;
-    const dx = s.x - x;
-    const dSq = dx * dx + dz * dz;
-    if (dSq < minRoadDistSq) {
-      minRoadDistSq = dSq;
-    }
-  }
+  const roadHit = findClosestSplineSample(asphaltSamples, x, z, 40);
+  const dirtHit = findClosestSplineSample(dirtSamples, x, z, 34);
+  const riverHit = findClosestSplineSample(riverSamples, x, z, 42);
 
-  // 2. Find closest distance to Dirt Trail spline
-  let minDirtDistSq = Infinity;
-  let closestDirtKicker = 0;
-  for (let i = 0; i < dirtSamples.length; i++) {
-    const s = dirtSamples[i];
-    const dz = s.z - z;
-    if (Math.abs(dz) > 28) continue;
-    const dx = s.x - x;
-    const dSq = dx * dx + dz * dz;
-    if (dSq < minDirtDistSq) {
-      minDirtDistSq = dSq;
-      closestDirtKicker = s.kickerBoost;
-    }
-  }
-
-  // 3. Find closest distance to Downhill Whitewater River spline
-  let minRiverDistSq = Infinity;
-  for (let i = 0; i < riverSamples.length; i++) {
-    const s = riverSamples[i];
-    const dz = s.z - z;
-    if (Math.abs(dz) > 36) continue;
-    const dx = s.x - x;
-    const dSq = dx * dx + dz * dz;
-    if (dSq < minRiverDistSq) {
-      minRiverDistSq = dSq;
-    }
-  }
-
-  const roadDist = Math.sqrt(minRoadDistSq);
-  const dirtDist = Math.sqrt(minDirtDistSq);
-  const riverDist = Math.sqrt(minRiverDistSq);
+  const roadDist = Math.sqrt(roadHit.distSq);
+  const dirtDist = Math.sqrt(dirtHit.distSq);
+  const closestDirtKicker = dirtHit.sample.kickerBoost;
+  const riverDist = Math.sqrt(riverHit.distSq);
 
   // Carve the Downhill Mountain Whitewater River Channel (from Z = -282 down to Mirror Lake at Z = +252)
   const inRiverZone = z > -282 && z < 260 && riverDist < 22.0;
@@ -251,8 +256,6 @@ function evaluatePoint(x: number, z: number): {
   return {
     height: rawH,
     surfaceCode,
-    roadBlend: roadDist < 5.2 ? 1 : 0,
-    dirtBlend: dirtDist < 3.0 ? 1 : 0,
   };
 }
 

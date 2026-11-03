@@ -12,6 +12,9 @@ import { soundscape } from '../audio/soundscape';
 
 const SMOKE_PUFF_COUNT = 42;
 const _smokeDummy = new THREE.Object3D();
+const SMOKE_NIGHT_COL = new THREE.Color('#c5cdd8');
+const SMOKE_GOLDEN_COL = new THREE.Color('#fed7aa');
+const SMOKE_DAY_COL = new THREE.Color('#f4ede2');
 
 /**
  * Step 3.1 & 3.2: Boreal Triathlon & Diegetic Zero-HUD Navigation (1,000m Canyon Map)
@@ -83,16 +86,16 @@ export const TriathlonCourse: React.FC = () => {
       smokeMeshRef.current.instanceMatrix.needsUpdate = true;
     }
 
-    // Adapt smoke tint slightly for sunset golden hour / night
+    // Adapt smoke tint slightly for sunset golden hour / night (zero string allocations)
     if (smokeMatRef.current) {
       if (p.nightFactor > 0.4) {
-        smokeMatRef.current.color.set('#c5cdd8');
+        smokeMatRef.current.color.copy(SMOKE_NIGHT_COL);
         smokeMatRef.current.opacity = 0.28;
       } else if (p.timeOfDay > 16.5 && p.timeOfDay < 19.5) {
-        smokeMatRef.current.color.set('#fed7aa');
+        smokeMatRef.current.color.copy(SMOKE_GOLDEN_COL);
         smokeMatRef.current.opacity = 0.38;
       } else {
-        smokeMatRef.current.color.set('#f4ede2');
+        smokeMatRef.current.color.copy(SMOKE_DAY_COL);
         smokeMatRef.current.opacity = 0.35;
       }
     }

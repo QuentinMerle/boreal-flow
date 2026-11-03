@@ -94,6 +94,23 @@ export const ParticleJuice: React.FC = () => {
     lastPoofCounter: mutablePhysics.poofCounter,
   });
 
+  // Initialize all instanced particle matrices to hidden once on mount
+  React.useLayoutEffect(() => {
+    _dummy.position.set(0, -100, 0);
+    _dummy.scale.setScalar(0);
+    _dummy.updateMatrix();
+    const initMesh = (mesh: THREE.InstancedMesh | null, count: number) => {
+      if (!mesh) return;
+      for (let i = 0; i < count; i++) {
+        mesh.setMatrixAt(i, _dummy.matrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    };
+    initMesh(dustMeshRef.current, DUST_COUNT);
+    initMesh(wakeMeshRef.current, WAKE_COUNT);
+    initMesh(poofMeshRef.current, POOF_COUNT);
+  }, []);
+
   useFrame((_, rawDelta) => {
     const dt = Math.min(rawDelta, 0.05);
     const p = mutablePhysics;
@@ -121,15 +138,11 @@ export const ParticleJuice: React.FC = () => {
     }
 
     if (poofMeshRef.current) {
+      let anyPoofUpdated = false;
       for (let i = 0; i < POOF_COUNT; i++) {
         const pf = poofPool[i];
-        if (!pf.active) {
-          _dummy.position.set(0, -100, 0);
-          _dummy.scale.setScalar(0);
-          _dummy.updateMatrix();
-          poofMeshRef.current.setMatrixAt(i, _dummy.matrix);
-          continue;
-        }
+        if (!pf.active) continue;
+        anyPoofUpdated = true;
         pf.age += dt;
         if (pf.age >= pf.maxAge) {
           pf.active = false;
@@ -149,7 +162,9 @@ export const ParticleJuice: React.FC = () => {
         _dummy.updateMatrix();
         poofMeshRef.current.setMatrixAt(i, _dummy.matrix);
       }
-      poofMeshRef.current.instanceMatrix.needsUpdate = true;
+      if (anyPoofUpdated) {
+        poofMeshRef.current.instanceMatrix.needsUpdate = true;
+      }
     }
 
     // --- 1. Spawn Dust / Drift Particles ---
@@ -181,15 +196,11 @@ export const ParticleJuice: React.FC = () => {
     }
 
     if (dustMeshRef.current) {
+      let anyDustUpdated = false;
       for (let i = 0; i < DUST_COUNT; i++) {
         const pt = dustPool[i];
-        if (!pt.active) {
-          _dummy.position.set(0, -100, 0);
-          _dummy.scale.setScalar(0);
-          _dummy.updateMatrix();
-          dustMeshRef.current.setMatrixAt(i, _dummy.matrix);
-          continue;
-        }
+        if (!pt.active) continue;
+        anyDustUpdated = true;
         pt.age += dt;
         if (pt.age >= pt.maxAge) {
           pt.active = false;
@@ -207,7 +218,9 @@ export const ParticleJuice: React.FC = () => {
         _dummy.updateMatrix();
         dustMeshRef.current.setMatrixAt(i, _dummy.matrix);
       }
-      dustMeshRef.current.instanceMatrix.needsUpdate = true;
+      if (anyDustUpdated) {
+        dustMeshRef.current.instanceMatrix.needsUpdate = true;
+      }
     }
 
     // --- 2. Spawn Water Foam Wake Trail ---
@@ -216,6 +229,7 @@ export const ParticleJuice: React.FC = () => {
       t.wakeAccum += dt;
       if (t.wakeAccum >= 0.04) {
         t.wakeAccum = 0;
+        const wakeBaseY = Math.max(WATER_LEVEL, p.position.y) + 0.04;
         for (const side of [-1, 1]) {
           const idx = t.wakeCursor % WAKE_COUNT;
           t.wakeCursor++;
@@ -226,7 +240,7 @@ export const ParticleJuice: React.FC = () => {
           const rightX = p.forward.z;
           const rightZ = -p.forward.x;
           wk.x = p.position.x - p.forward.x * 0.9 + rightX * side * 0.45;
-          wk.y = WATER_LEVEL + 0.04;
+          wk.y = wakeBaseY;
           wk.z = p.position.z - p.forward.z * 0.9 + rightZ * side * 0.45;
           wk.vx = rightX * side * (1.2 + p.speed * 0.08);
           wk.vy = 0;
@@ -237,15 +251,11 @@ export const ParticleJuice: React.FC = () => {
     }
 
     if (wakeMeshRef.current) {
+      let anyWakeUpdated = false;
       for (let i = 0; i < WAKE_COUNT; i++) {
         const wk = wakePool[i];
-        if (!wk.active) {
-          _dummy.position.set(0, -100, 0);
-          _dummy.scale.setScalar(0);
-          _dummy.updateMatrix();
-          wakeMeshRef.current.setMatrixAt(i, _dummy.matrix);
-          continue;
-        }
+        if (!wk.active) continue;
+        anyWakeUpdated = true;
         wk.age += dt;
         if (wk.age >= wk.maxAge) {
           wk.active = false;
@@ -263,7 +273,9 @@ export const ParticleJuice: React.FC = () => {
         _dummy.updateMatrix();
         wakeMeshRef.current.setMatrixAt(i, _dummy.matrix);
       }
-      wakeMeshRef.current.instanceMatrix.needsUpdate = true;
+      if (anyWakeUpdated) {
+        wakeMeshRef.current.instanceMatrix.needsUpdate = true;
+      }
     }
   });
 

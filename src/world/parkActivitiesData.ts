@@ -117,20 +117,11 @@ export const WILDLIFE_SPECIES: WildlifeSpecies[] = [
   },
 ];
 
-// --- Step 3.3: Bouldering Crag, Summit Firewatch Tower & 700m Canyon Zipline ---
+// --- Step 3.3: Summit Firewatch Tower & 700m Canyon Zipline ---
 export const TOWER_BASE_X = 0;
 export const TOWER_BASE_Z = -475;
 export const TOWER_BASE_Y = getTerrainHeightOnly(TOWER_BASE_X, TOWER_BASE_Z);
-export const TOWER_DECK_HEIGHT = 18.5; // Deck is at TOWER_BASE_Y + 18.5 (~143m)
-
-// Bouldering cliff face zone on the south side of the Firewatch Tower foundation
-export const CLIMB_ZONE = {
-  centerX: 0,
-  centerZ: -469.5,
-  minY: TOWER_BASE_Y,
-  maxY: TOWER_BASE_Y + TOWER_DECK_HEIGHT + 0.5,
-  radius: 4.4,
-};
+export const TOWER_DECK_HEIGHT = 18.5; // Deck is at TOWER_BASE_Y + 18.5
 
 // Zipline stretches 700m from the Summit Firewatch Tower Deck all the way to the Lakeside Base Camp!
 export const ZIPLINE_START = new THREE.Vector3(2.4, TOWER_BASE_Y + TOWER_DECK_HEIGHT + 1.8, -471);

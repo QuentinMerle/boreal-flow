@@ -42,8 +42,6 @@ export const HudOverlay: React.FC = () => {
   const clockDomRef = useRef<HTMLSpanElement>(null);
   const headlampDomRef = useRef<HTMLSpanElement>(null);
   const promptDomRef = useRef<HTMLDivElement>(null);
-  const staminaWrapRef = useRef<HTMLDivElement>(null);
-  const staminaCircleRef = useRef<SVGCircleElement>(null);
   const binoTargetRef = useRef<HTMLDivElement>(null);
   const binoBarRef = useRef<HTMLDivElement>(null);
   const triathlonLiveRef = useRef<HTMLDivElement>(null);
@@ -52,7 +50,6 @@ export const HudOverlay: React.FC = () => {
 
   useEffect(() => {
     let rafId = 0;
-    const circumference = 2 * Math.PI * 22;
 
     const updateTelemetry = () => {
       const p = mutablePhysics;
@@ -111,14 +108,6 @@ export const HudOverlay: React.FC = () => {
           promptDomRef.current.style.transform = 'translate(-50%, 8px)';
         }
       }
-      if (staminaWrapRef.current && staminaCircleRef.current) {
-        const showStamina = p.specialState === 'CLIMBING' || p.stamina < 0.99;
-        staminaWrapRef.current.style.opacity = showStamina ? '1' : '0';
-        const offset = circumference * (1 - p.stamina);
-        staminaCircleRef.current.style.strokeDashoffset = `${offset}`;
-        staminaCircleRef.current.style.stroke =
-          p.stamina > 0.35 ? '#06d6a0' : '#ef476f';
-      }
       if (binoTargetRef.current && binoBarRef.current) {
         const species = WILDLIFE_SPECIES.find((w) => w.id === p.targetedBirdId);
         if (species) {
@@ -136,9 +125,6 @@ export const HudOverlay: React.FC = () => {
           badgeDomRef.current.style.opacity = '1';
         } else if (p.specialState === 'ZIPLINE') {
           badgeDomRef.current.textContent = 'ZIPLINE';
-          badgeDomRef.current.style.opacity = '1';
-        } else if (p.specialState === 'CLIMBING') {
-          badgeDomRef.current.textContent = 'BOULDERING';
           badgeDomRef.current.style.opacity = '1';
         } else if (!p.isGrounded) {
           badgeDomRef.current.textContent = 'AIRBORNE';
@@ -294,58 +280,6 @@ export const HudOverlay: React.FC = () => {
           </div>
         </div>
       )}
-
-      {/* Step 3.3: Bouldering Stamina Ring */}
-      <div
-        ref={staminaWrapRef}
-        style={{
-          position: 'fixed',
-          top: '50%',
-          left: '56%',
-          transform: 'translate(-50%, -50%)',
-          opacity: 0,
-          transition: 'opacity 0.2s ease',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '4px',
-        }}
-      >
-        <svg width="56" height="56" style={{ transform: 'rotate(-90deg)' }}>
-          <circle
-            cx="28"
-            cy="28"
-            r="22"
-            stroke="rgba(20, 29, 27, 0.75)"
-            strokeWidth="6"
-            fill="rgba(20, 29, 27, 0.55)"
-          />
-          <circle
-            ref={staminaCircleRef}
-            cx="28"
-            cy="28"
-            r="22"
-            stroke="#06d6a0"
-            strokeWidth="5"
-            strokeDasharray={2 * Math.PI * 22}
-            strokeDashoffset="0"
-            strokeLinecap="round"
-            fill="transparent"
-          />
-        </svg>
-        <span
-          style={{
-            fontSize: '10px',
-            fontWeight: 800,
-            background: 'rgba(20,29,27,0.85)',
-            padding: '2px 6px',
-            borderRadius: '4px',
-            color: '#06d6a0',
-          }}
-        >
-          GRIP
-        </span>
-      </div>
 
       {/* Step 3.2: Floating Live Triathlon Chronometer (60Hz Direct DOM) */}
       <div

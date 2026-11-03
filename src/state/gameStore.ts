@@ -4,7 +4,7 @@ import * as THREE from 'three';
 export type MovementMode = 'WALK' | 'LONGBOARD' | 'BIKE' | 'CANOE';
 export type SurfaceType = 'ASPHALT' | 'DIRT' | 'GRASS' | 'ROCK' | 'SAND' | 'WATER';
 export type TimePreset = 'DAWN' | 'NOON' | 'GOLDEN' | 'NIGHT';
-export type SpecialActionState = 'NONE' | 'CLIMBING' | 'ZIPLINE' | 'CAMPFIRE';
+export type SpecialActionState = 'NONE' | 'ZIPLINE' | 'CAMPFIRE';
 export type CameraMode = 'DIORAMA' | 'COCKPIT';
 export type TriathlonStatus = 'IDLE' | 'ACTIVE' | 'FINISHED';
 export type BadgeType = 'MAPLE' | 'JAY' | 'MOOSE' | 'NONE';
@@ -108,9 +108,8 @@ export interface MutablePhysicsState {
   timeOfDay: number;
   nightFactor: number;
   headlampOn: boolean;
-  // Phase 3: Activities, Stamina, Zipline, Binoculars & Poof Burst
+  // Phase 3: Activities, Zipline, Binoculars & Poof Burst
   specialState: SpecialActionState;
-  stamina: number;
   ziplineT: number;
   poofCounter: number;
   poofPosition: THREE.Vector3;
@@ -155,7 +154,6 @@ export const mutablePhysics: MutablePhysicsState = {
   nightFactor: 0,
   headlampOn: false,
   specialState: 'NONE',
-  stamina: 1.0,
   ziplineT: 0,
   poofCounter: 0,
   poofPosition: new THREE.Vector3(),
@@ -272,7 +270,6 @@ export const useGameStore = create<GameUIState>((set) => ({
   respawnAt: (target, defaultMode) =>
     set((state) => {
       mutablePhysics.specialState = target === 'CAMPFIRE_HUB' ? 'CAMPFIRE' : 'NONE';
-      mutablePhysics.stamina = 1.0;
       if (target === 'SUMMIT_ROAD' || target === 'SUMMIT_TRAIL') {
         mutablePhysics.triathlonStatus = 'IDLE';
         mutablePhysics.triathlonTimer = 0;

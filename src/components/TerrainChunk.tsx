@@ -22,11 +22,8 @@ import { mutablePhysics } from '../state/gameStore';
 
 // Crisp "Firewatch / Lonely Mountains / A Short Hike" matte clay palette
 const PALETTE = {
-  GRASS_HIGH: new THREE.Color('#4d7c5b'),
   GRASS_MID: new THREE.Color('#3b694c'),
   GRASS_WARM: new THREE.Color('#6b8e4e'),
-  SHOULDER_GRAVEL: new THREE.Color('#6c756b'),
-  SHOULDER_MOSS: new THREE.Color('#4b6b4c'),
   ROCK_LIGHT: new THREE.Color('#7a8288'),
   ROCK_DARK: new THREE.Color('#555d66'),
   ALPINE_SNOW: new THREE.Color('#e8eff5'),
@@ -59,9 +56,6 @@ function injectWindShader(shader: THREE.WebGLProgramParametersWithUniforms, sway
     );
 }
 
-/**
- * Generates a smooth, terrain-hugging extruded Ribbon BufferGeometry along a 3D spline.
- */
 /**
  * Builds a continuous, terrain-conforming smooth spline ribbon with integrated
  * cambered shoulders that tuck cleanly into the ground (zero jagged grid triangles).
@@ -682,6 +676,7 @@ const InstancedPosts: React.FC<{ matrices: THREE.Matrix4[]; colors: THREE.Color[
     }
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.computeBoundingSphere();
   }, [matrices, colors]);
 
   return (
@@ -734,6 +729,9 @@ const InstancedPines: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
     trunkRef.current.instanceMatrix.needsUpdate = true;
     lowerTierRef.current.instanceMatrix.needsUpdate = true;
     upperTierRef.current.instanceMatrix.needsUpdate = true;
+    trunkRef.current.computeBoundingSphere();
+    lowerTierRef.current.computeBoundingSphere();
+    upperTierRef.current.computeBoundingSphere();
   }, [matrices]);
 
   return (
@@ -775,6 +773,7 @@ const InstancedRocks: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
     }
     meshRef.current.instanceMatrix.needsUpdate = true;
     if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
+    meshRef.current.computeBoundingSphere();
   }, [matrices]);
 
   return (
@@ -804,6 +803,7 @@ const InstancedGrass: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
       meshRef.current.setMatrixAt(i, matrices[i]);
     }
     meshRef.current.instanceMatrix.needsUpdate = true;
+    meshRef.current.computeBoundingSphere();
   }, [matrices]);
 
   return (

@@ -176,11 +176,6 @@ export const DioramaCamera: React.FC = () => {
         CAMPFIRE_WORLD_POS.y + 0.85,
         CAMPFIRE_WORLD_POS.z - 0.5
       );
-    }
-    // --- CLIMBING CAMERA FRAMING ---
-    else if (p.specialState === 'CLIMBING') {
-      _desiredPos.set(pos.x, pos.y + 4.5, pos.z + 13.5);
-      _desiredLookAt.set(pos.x, pos.y + 2.2, pos.z - 2.0);
     } else {
       // --- DYNAMIC LOW-SLUNG CHASE / CINEMA DIORAMA CAMERA ---
       // Lower height + closer follow distance frames the horizon, mountain drop & distant smoke plume!
