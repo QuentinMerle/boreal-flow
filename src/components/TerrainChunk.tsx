@@ -69,17 +69,22 @@ function createSplineRibbonGeometry(
   halfWidth: number,
   yOffset: number,
   coreColorHex: string,
-  shoulderColorHex: string
+  shoulderColorHex: string,
+  isEarthyDirt = false
 ): THREE.BufferGeometry {
-  const crossPts = 9;
+  const crossPts = isEarthyDirt ? 13 : 9;
   const positions = new Float32Array((segments + 1) * crossPts * 3);
   const colors = new Float32Array((segments + 1) * crossPts * 3);
+  const uvs = new Float32Array((segments + 1) * crossPts * 2);
   const indices: number[] = [];
 
   const pt = new THREE.Vector3();
   const tangent = new THREE.Vector3();
   const cCore = new THREE.Color(coreColorHex);
   const cShoulder = new THREE.Color(shoulderColorHex);
+  const cDarkLoam = new THREE.Color('#5a311b');
+  const cDryGravel = new THREE.Color('#b37a52');
+  const cRut = new THREE.Color('#4a2715');
   const tmpCol = new THREE.Color();
 
   for (let i = 0; i <= segments; i++) {
@@ -94,16 +99,58 @@ function createSplineRibbonGeometry(
     const nx = rightX / len;
     const nz = rightZ / len;
 
+    // Organic width meander for dirt singletrack so edges aren't ruler-straight
+    const widthWarp = isEarthyDirt
+      ? 1.0 + simplex2D(pt.x * 0.09, pt.z * 0.09) * 0.14 + simplex2D(pt.x * 0.28, pt.z * 0.28) * 0.06
+      : 1.0;
+
     for (let c = 0; c < crossPts; c++) {
       const u = (c / (crossPts - 1)) * 2 - 1; // -1 to +1
       const absU = Math.abs(u);
-      const wx = pt.x + nx * halfWidth * u;
-      const wz = pt.z + nz * halfWidth * u;
+      const effectiveHalfW = halfWidth * (isEarthyDirt ? THREE.MathUtils.lerp(1.0, widthWarp, absU) : 1.0);
+      const wx = pt.x + nx * effectiveHalfW * u;
+      const wz = pt.z + nz * effectiveHalfW * u;
 
       // Smoothly arched road/trail bed that tucks edges (-0.09m) into the terrain
       // so the underlying terrain never pokes through or shows sawtooth borders
       let heightProfile = yOffset;
-      if (absU <= 0.72) {
+      if (isEarthyDirt) {
+        const nMacro = simplex2D(wx * 0.14, wz * 0.14);
+        const nMed = simplex2D(wx * 0.52, wz * 0.52);
+        // Subtle worn tire rut in the very center + gravelly outer berm
+        const rutDip = Math.exp(- (u * u) / 0.06) * 0.028;
+        const bermBulge = Math.exp(- Math.pow(absU - 0.52, 2) / 0.04) * (0.035 + Math.max(0, nMacro) * 0.025);
+
+        if (absU <= 0.72) {
+          const normU = absU / 0.72;
+          heightProfile = yOffset + (1 - normU * normU) * 0.055 - rutDip + bermBulge;
+
+          // Base cedar clay mixed with dark forest loam & dry sandy gravel patches
+          tmpCol.copy(cCore);
+          if (nMacro > 0) {
+            tmpCol.lerp(cDryGravel, nMacro * 0.55);
+          } else {
+            tmpCol.lerp(cDarkLoam, -nMacro * 0.65);
+          }
+          // Outer berm catches drier gravel / pine needles
+          const bermMix = THREE.MathUtils.smoothstep(absU, 0.28, 0.68);
+          tmpCol.lerp(cDryGravel, bermMix * 0.35 + Math.max(0, nMed) * 0.2);
+
+          // Worn central singletrack tire line (packed dark earth)
+          const rutFactor = Math.exp(- Math.pow(u - nMacro * 0.12, 2) / 0.045);
+          tmpCol.lerp(cRut, rutFactor * 0.48);
+        } else {
+          // Noise-warped organic transition into forest moss
+          const noisyEdge = THREE.MathUtils.clamp(
+            (absU - 0.72 + nMed * 0.07) / 0.28,
+            0,
+            1
+          );
+          const smoothEdge = noisyEdge * noisyEdge * (3 - 2 * noisyEdge);
+          heightProfile = THREE.MathUtils.lerp(yOffset, -0.09, smoothEdge);
+          tmpCol.copy(cCore).lerp(cDarkLoam, 0.3).lerp(cShoulder, smoothEdge);
+        }
+      } else if (absU <= 0.72) {
         const normU = absU / 0.72;
         heightProfile = yOffset + (1 - normU * normU) * 0.06;
         tmpCol.copy(cCore);
@@ -124,6 +171,10 @@ function createSplineRibbonGeometry(
       colors[vIdx] = tmpCol.r;
       colors[vIdx + 1] = tmpCol.g;
       colors[vIdx + 2] = tmpCol.b;
+
+      const uvIdx = (i * crossPts + c) * 2;
+      uvs[uvIdx] = u; // -1..1 across trail width
+      uvs[uvIdx + 1] = t * 140.0; // longitudinal distance coordinates
     }
 
     if (i < segments) {
@@ -141,6 +192,7 @@ function createSplineRibbonGeometry(
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
   geo.setIndex(indices);
   geo.computeVertexNormals();
   return geo;
@@ -292,24 +344,137 @@ export const TerrainChunk: React.FC = () => {
   }, []);
 
   // 2. Smooth Ribbon Geometries for 1,000m Road, Dashed Yellow Center Lines, Dirt Singletrack & Downhill Whitewater River!
-  const { roadRibbonGeo, roadStripeGeo, dirtRibbonGeo, riverRibbonGeo } = useMemo(() => {
+  const { roadRibbonGeo, roadStripeGeo, dirtRibbonGeo, dirtMaterial, riverRibbonGeo } = useMemo(() => {
     const roadRibbon = createSplineRibbonGeometry(
       asphaltCurve,
       640,
       5.2,
       0.14,
       '#24272c',
-      '#4e535c'
+      '#4e535c',
+      false
     );
     const roadStripe = createDashedCenterLineGeometry(asphaltCurve, 155, 0.14, 0.22);
     const dirtRibbon = createSplineRibbonGeometry(
       dirtCurve,
-      560,
-      3.1,
+      680,
+      3.15,
       0.12,
       '#8f5336',
-      '#586443'
+      '#4e643e',
+      true
     );
+
+    const dMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.95,
+      metalness: 0.01,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+    });
+
+    dMat.onBeforeCompile = (shader) => {
+      shader.vertexShader =
+        `varying vec3 vDirtWorldPos;\nvarying vec2 vDirtUv;\n` +
+        shader.vertexShader.replace(
+          '#include <begin_vertex>',
+          `
+          #include <begin_vertex>
+          vDirtWorldPos = position;
+          vDirtUv = uv;
+          `
+        );
+
+      const dirtNoiseHelpers = `
+        varying vec3 vDirtWorldPos;
+        varying vec2 vDirtUv;
+
+        float dirtHash(vec2 p) {
+          p = fract(p * vec2(127.1, 311.7));
+          p += dot(p, p + 34.345);
+          return fract(p.x * p.y);
+        }
+
+        float dirtNoise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(
+            mix(dirtHash(i + vec2(0.0, 0.0)), dirtHash(i + vec2(1.0, 0.0)), u.x),
+            mix(dirtHash(i + vec2(0.0, 1.0)), dirtHash(i + vec2(1.0, 1.0)), u.x),
+            u.y
+          );
+        }
+
+        float dirtFbm(vec2 p) {
+          float v = 0.0;
+          float a = 0.5;
+          mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);
+          for (int i = 0; i < 3; i++) {
+            v += a * dirtNoise(p);
+            p = rot * p * 2.07 + vec2(17.3, 9.2);
+            a *= 0.5;
+          }
+          return v;
+        }
+      `;
+
+      shader.fragmentShader =
+        dirtNoiseHelpers +
+        shader.fragmentShader
+          .replace(
+            '#include <color_fragment>',
+            `
+            #include <color_fragment>
+            float absU = abs(vDirtUv.x);
+            float centerMask = 1.0 - smoothstep(0.62, 0.92, absU);
+
+            // 1. Multi-scale organic soil clods & humus patches (world-space FBM)
+            float soilMacro = dirtFbm(vDirtWorldPos.xz * 0.65);
+            float soilFine  = dirtFbm(vDirtWorldPos.xz * 3.4);
+            float soilGrain = dirtNoise(vDirtWorldPos.xz * 12.5);
+
+            // 2. Longitudinal tire-tread & rainwater erosion striations along the trail
+            float rutWave = dirtNoise(vec2(vDirtUv.x * 9.5 + soilMacro * 1.4, vDirtUv.y * 0.55));
+            float rutGroove = smoothstep(0.32, 0.78, rutWave) * exp(- (vDirtUv.x * vDirtUv.x) / 0.16);
+
+            // 3. Embedded small stones / gravel pebbles & dark root/bark flecks
+            float pebbleField = dirtNoise(vDirtWorldPos.xz * 6.8 + vec2(soilMacro * 2.0));
+            float bermZone = smoothstep(0.15, 0.55, absU) * centerMask;
+            float pebbleSpot = smoothstep(0.74 - bermZone * 0.08, 0.83 - bermZone * 0.08, pebbleField);
+            float darkHumusSpot = smoothstep(0.76, 0.86, dirtNoise(vDirtWorldPos.xz * 4.5 + 31.7)) * centerMask;
+
+            vec3 darkLoamCol = vec3(0.24, 0.13, 0.07);
+            vec3 warmOchreCol = vec3(0.68, 0.43, 0.27);
+            vec3 pebbleGreyCol = vec3(0.56, 0.54, 0.50);
+
+            // Blend soil clod variations
+            diffuseColor.rgb = mix(diffuseColor.rgb, darkLoamCol, (soilMacro - 0.45) * 0.42 * centerMask);
+            diffuseColor.rgb = mix(diffuseColor.rgb, warmOchreCol, (soilFine - 0.5) * 0.35 * centerMask);
+            // Darken packed central tire rut grooves
+            diffuseColor.rgb = mix(diffuseColor.rgb, darkLoamCol, rutGroove * 0.28);
+            // Add dark cedar bark / humus flecks & small grey/ochre stones
+            diffuseColor.rgb = mix(diffuseColor.rgb, darkLoamCol * 0.85, darkHumusSpot * 0.42);
+            diffuseColor.rgb = mix(diffuseColor.rgb, pebbleGreyCol, pebbleSpot * 0.52 * centerMask);
+            // Fine gritty sand/soil grain
+            diffuseColor.rgb *= (0.91 + soilGrain * 0.18);
+            `
+          )
+          .replace(
+            '#include <normal_fragment_maps>',
+            `
+            #include <normal_fragment_maps>
+            float nMask = 1.0 - smoothstep(0.65, 0.95, abs(vDirtUv.x));
+            vec2 wp = vDirtWorldPos.xz * 3.8;
+            float h0 = dirtFbm(wp) + dirtNoise(vDirtWorldPos.xz * 11.0) * 0.35;
+            float hx = dirtFbm(wp + vec2(0.12, 0.0)) + dirtNoise((vDirtWorldPos.xz + vec2(0.05, 0.0)) * 11.0) * 0.35;
+            float hz = dirtFbm(wp + vec2(0.0, 0.12)) + dirtNoise((vDirtWorldPos.xz + vec2(0.0, 0.05)) * 11.0) * 0.35;
+            vec3 dirtPerturb = vec3((h0 - hx) * 0.38, 0.0, (h0 - hz) * 0.38) * nMask;
+            normal = normalize(normal + dirtPerturb);
+            `
+          );
+    };
+
     // Downhill Whitewater Rapids Ribbon (glacial turquoise center with frothy whitewater foam edges)
     const riverRibbon = createSplineRibbonGeometry(
       riverCurve,
@@ -317,12 +482,14 @@ export const TerrainChunk: React.FC = () => {
       6.4,
       0.32,
       '#2c95a8',
-      '#e2f7f5'
+      '#e2f7f5',
+      false
     );
     return {
       roadRibbonGeo: roadRibbon,
       roadStripeGeo: roadStripe,
       dirtRibbonGeo: dirtRibbon,
+      dirtMaterial: dMat,
       riverRibbonGeo: riverRibbon,
     };
   }, []);
@@ -564,16 +731,8 @@ export const TerrainChunk: React.FC = () => {
         />
       </mesh>
 
-      {/* Dedicated Smooth Cedar Dirt Singletrack Ribbon Mesh with Cambered Moss Shoulders */}
-      <mesh geometry={dirtRibbonGeo} receiveShadow>
-        <meshStandardMaterial
-          vertexColors
-          roughness={0.92}
-          metalness={0.01}
-          polygonOffset
-          polygonOffsetFactor={-1}
-        />
-      </mesh>
+      {/* Dedicated Earthy Cedar Dirt Singletrack Ribbon Mesh with Organic Loam, Pebbles & Ruts */}
+      <mesh geometry={dirtRibbonGeo} material={dirtMaterial} receiveShadow />
 
       {/* Fallen Cedar Tree Log Hurdles across Road & Singletrack (Bunny-Hop Obstacles!) */}
       {FALLEN_LOGS.map((log) => (
