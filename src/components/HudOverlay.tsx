@@ -48,6 +48,7 @@ export const HudOverlay: React.FC = () => {
   const binoBarRef = useRef<HTMLDivElement>(null);
   const triathlonLiveRef = useRef<HTMLDivElement>(null);
   const triathlonTimeRef = useRef<HTMLSpanElement>(null);
+  const speedLinesDomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let rafId = 0;
@@ -58,6 +59,17 @@ export const HudOverlay: React.FC = () => {
       if (speedDomRef.current) {
         const kmh = Math.round(p.speed * 2.4);
         speedDomRef.current.textContent = `${kmh}`;
+      }
+      if (speedLinesDomRef.current) {
+        // Subtle peripheral flow-state speed lines starting around 36 km/h (p.speed > 15 m/s)
+        const speedNorm = Math.max(0, Math.min(1, (p.speed - 14.5) / 18.0));
+        if (speedNorm > 0.01) {
+          const flutter = 0.96 + 0.04 * Math.sin(performance.now() * 0.028);
+          speedLinesDomRef.current.style.opacity = `${(speedNorm * 0.52).toFixed(3)}`;
+          speedLinesDomRef.current.style.transform = `scale(${(1.06 - speedNorm * 0.06 * flutter).toFixed(3)})`;
+        } else {
+          speedLinesDomRef.current.style.opacity = '0';
+        }
       }
       if (surfaceDomRef.current) {
         surfaceDomRef.current.textContent =
@@ -187,6 +199,25 @@ export const HudOverlay: React.FC = () => {
           }}
         />
       )}
+
+      {/* Subtle Peripheral Wind Speed-Lines Vignette at High Speeds (Zero WebGL GPU cost) */}
+      <div
+        ref={speedLinesDomRef}
+        style={{
+          position: 'fixed',
+          inset: '-4%',
+          pointerEvents: 'none',
+          opacity: 0,
+          zIndex: 1,
+          transition: 'opacity 0.12s linear',
+          background:
+            'repeating-conic-gradient(from 0deg at 50% 50%, rgba(255,255,255,0.0) 0deg, rgba(255,255,255,0.0) 4.2deg, rgba(244,241,234,0.22) 4.6deg, rgba(255,255,255,0.0) 5.0deg, rgba(255,255,255,0.0) 11.5deg, rgba(244,241,234,0.14) 11.8deg, rgba(255,255,255,0.0) 12.2deg)',
+          maskImage:
+            'radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 56%, rgba(0,0,0,0.35) 76%, rgba(0,0,0,0.95) 100%)',
+          WebkitMaskImage:
+            'radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 56%, rgba(0,0,0,0.35) 76%, rgba(0,0,0,0.95) 100%)',
+        }}
+      />
 
       {/* Step 3.2: Binoculars Viewfinder Vignette & Acoustic Scanner */}
       {binocularsActive && (
@@ -740,7 +771,7 @@ export const HudOverlay: React.FC = () => {
               }}
               style={teleportBtnStyle('#4ea8de')}
             >
-              🛶 Mirror Lake
+              🛶 Whitewater Rapids
             </button>
           </div>
 

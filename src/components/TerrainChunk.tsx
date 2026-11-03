@@ -11,6 +11,7 @@ import {
   surfaceGrid,
   asphaltCurve,
   dirtCurve,
+  riverCurve,
   FALLEN_LOGS,
   FOREST_TREES,
   CANYON_ROCKS,
@@ -281,8 +282,8 @@ export const TerrainChunk: React.FC = () => {
     return baseGeo;
   }, []);
 
-  // 2. Smooth Ribbon Geometries for 1,000m Road, Dashed Yellow Center Lines & Dirt Singletrack
-  const { roadRibbonGeo, roadStripeGeo, dirtRibbonGeo } = useMemo(() => {
+  // 2. Smooth Ribbon Geometries for 1,000m Road, Dashed Yellow Center Lines, Dirt Singletrack & Downhill Whitewater River!
+  const { roadRibbonGeo, roadStripeGeo, dirtRibbonGeo, riverRibbonGeo } = useMemo(() => {
     const roadRibbon = createSplineRibbonGeometry(
       asphaltCurve,
       640,
@@ -300,18 +301,28 @@ export const TerrainChunk: React.FC = () => {
       '#8f5336',
       '#586443'
     );
+    // Downhill Whitewater Rapids Ribbon (glacial turquoise center with frothy whitewater foam edges)
+    const riverRibbon = createSplineRibbonGeometry(
+      riverCurve,
+      480,
+      6.4,
+      0.32,
+      '#2c95a8',
+      '#e2f7f5'
+    );
     return {
       roadRibbonGeo: roadRibbon,
       roadStripeGeo: roadStripe,
       dirtRibbonGeo: dirtRibbon,
+      riverRibbonGeo: riverRibbon,
     };
   }, []);
 
-  // 3. Water Surface Geometry with Vertex-Colored Shoreline Foam (Canyon River + Mirror Lake)
+  // 3. Water Surface Geometry with Vertex-Colored Shoreline Foam (Mirror Lake Basin at Bottom)
   const { waterGeometry, waterMaterial } = useMemo(() => {
-    const waterLen = 660; // Spans from Z = -160 to Z = +500 (center at Z = +170)
-    const centerZ = 170;
-    const geo = new THREE.PlaneGeometry(TERRAIN_WIDTH, waterLen, 110, 180);
+    const waterLen = 280; // Spans from Z = +220 to Z = +500 (center at Z = +360)
+    const centerZ = 360;
+    const geo = new THREE.PlaneGeometry(TERRAIN_WIDTH, waterLen, 110, 90);
     geo.rotateX(-Math.PI / 2);
 
     const pos = geo.attributes.position;
@@ -569,14 +580,20 @@ export const TerrainChunk: React.FC = () => {
         </group>
       ))}
 
-      {/* Canyon Whitewater River & Mirror Lake Plane with Shoreline Foam */}
+      {/* Downhill Whitewater Rapids River Ribbon (Flows down the slope from Z=-280 into Mirror Lake!) */}
+      <mesh geometry={riverRibbonGeo} material={waterMaterial} receiveShadow />
+
+      {/* Mirror Lake Plane with Shoreline Foam */}
       <mesh geometry={waterGeometry} material={waterMaterial} receiveShadow />
 
-      {/* Mid-Mountain Canyon River Wooden Put-In Deck (at x=62, z=-135) */}
-      <group position={[62, WATER_LEVEL + 0.2, -135]} rotation={[0, 0.35, 0]}>
+      {/* High-Mountain Whitewater Rapids Wooden Put-In Deck (at x=48, z=-272) */}
+      <group
+        position={[48, getTerrainHeightOnly(48, -272) + 0.12, -272]}
+        rotation={[0, 0.32, 0]}
+      >
         <mesh castShadow receiveShadow position={[0, 0.15, 0]}>
-          <boxGeometry args={[3.6, 0.28, 7.5]} />
-          <meshStandardMaterial color="#8c6239" flatShading roughness={0.88} />
+          <boxGeometry args={[3.8, 0.28, 7.8]} />
+          <meshStandardMaterial color="#8c6239" roughness={0.88} />
         </mesh>
       </group>
 

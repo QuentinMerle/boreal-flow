@@ -37,15 +37,16 @@ export const DIRT_SPLINE_POINTS = [
   new THREE.Vector3(14, 0, 245),
 ];
 
-// 3. Whitewater River Canyon Spline (Starts at Mid-Mountain Z=-135 and winds into Mirror Lake at Z=+260)
+// 3. Downhill Whitewater Kayak/Canoe River Spline (Starts high at Z=-280, Y=120m and rushes down to Mirror Lake at Z=+255)
 export const RIVER_SPLINE_POINTS = [
-  new THREE.Vector3(68, 0, -138),
-  new THREE.Vector3(84, 0, -70),
-  new THREE.Vector3(54, 0, 10),
-  new THREE.Vector3(78, 0, 90),
-  new THREE.Vector3(44, 0, 175),
-  new THREE.Vector3(22, 0, 255),
-  new THREE.Vector3(4, 0, 330),
+  new THREE.Vector3(54, 0, -280),
+  new THREE.Vector3(78, 0, -195),
+  new THREE.Vector3(52, 0, -105),
+  new THREE.Vector3(82, 0, -15),
+  new THREE.Vector3(56, 0, 75),
+  new THREE.Vector3(74, 0, 165),
+  new THREE.Vector3(24, 0, 252),
+  new THREE.Vector3(4, 0, 325),
 ];
 
 export const asphaltCurve = new THREE.CatmullRomCurve3(ASPHALT_SPLINE_POINTS, false, 'catmullrom', 0.5);
@@ -55,12 +56,13 @@ export const riverCurve = new THREE.CatmullRomCurve3(RIVER_SPLINE_POINTS, false,
 interface SampledSplinePoint {
   x: number;
   z: number;
-  baseElevation: number;
+  t: number;
+  kickerBoost: number;
   tx: number;
   tz: number;
 }
 
-const SAMPLE_COUNT = 800;
+const SAMPLE_COUNT = 900;
 const asphaltSamples: SampledSplinePoint[] = [];
 const dirtSamples: SampledSplinePoint[] = [];
 const riverSamples: SampledSplinePoint[] = [];
@@ -73,33 +75,37 @@ function evaluateKickerBoost(t: number): number {
   for (let i = 0; i < KICKER_T_POSITIONS.length; i++) {
     const kt = KICKER_T_POSITIONS[i];
     const diff = t - kt;
-    // Smooth 14m approach ramp up (+1.65m peak), steep lip on exit for crisp airborne launch!
+    // Smooth approach ramp up (+1.25m peak), crisp lip on exit
     if (diff > -0.024 && diff <= 0.003) {
       const u = (diff + 0.024) / 0.024; // 0 to 1
-      boost += Math.pow(Math.sin(u * Math.PI * 0.5), 1.6) * 1.65;
+      boost += Math.pow(Math.sin(u * Math.PI * 0.5), 1.6) * 1.25;
     } else if (diff > 0.003 && diff < 0.009) {
       const u = 1.0 - (diff - 0.003) / 0.006;
-      boost += u * u * 1.65;
+      boost += u * u * 1.25;
     }
   }
   return boost;
 }
 
-// Base mountain profile before spline carving (1,000m canyon from Z=-500 to Z=+500)
-function computeRawMountainElevation(x: number, z: number): number {
-  // Normalized progression from Summit (t=0 at Z=-465) to Mirror Lake Shore (t=1 at Z=+250)
+/**
+ * Pure C-infinity analytical mountain slope elevation at any Z coordinate.
+ * Using this directly at (z) eliminates all discrete spline-sample staircase bumps on the road!
+ */
+export function computeSmoothSlopeElevation(z: number): number {
   const slopeT = THREE.MathUtils.clamp((z + 465) / 715, 0, 1.35);
-
-  // Smooth S-curve mountain drop: 210m alpine summit down to 0m at Z=+250
-  let baseHeight = 0;
   if (slopeT <= 1.0) {
     const smooth = 1.0 - slopeT;
-    baseHeight = 210.0 * Math.pow(smooth, 1.38);
+    return 210.0 * Math.pow(smooth, 1.38);
   } else {
-    // Mirror Lake basin (Z > 250 dips smoothly underwater to -7.5m)
     const waterT = THREE.MathUtils.clamp((z - 250) / 180, 0, 1);
-    baseHeight = -7.5 * Math.sin(waterT * Math.PI * 0.5);
+    return -7.5 * Math.sin(waterT * Math.PI * 0.5);
   }
+}
+
+// Base mountain profile before spline carving (1,000m canyon from Z=-500 to Z=+500)
+function computeRawMountainElevation(x: number, z: number): number {
+  const slopeT = THREE.MathUtils.clamp((z + 465) / 715, 0, 1.35);
+  const baseHeight = computeSmoothSlopeElevation(z);
 
   // Dramatic Canadian canyon walls on far left/right flanks
   const edgeDist = Math.max(0, Math.abs(x) - 88);
@@ -116,7 +122,7 @@ function computeRawMountainElevation(x: number, z: number): number {
   return baseHeight + canyonWall + (macroNoise + ridgeNoise) * noiseMask;
 }
 
-// Pre-sample all 3 splines so terrain generation and O(1) queries remain fast
+// Pre-sample all 3 splines for fast 2D distance queries
 function initSplineSamples() {
   const tmp = new THREE.Vector3();
   const tan = new THREE.Vector3();
@@ -127,23 +133,19 @@ function initSplineSamples() {
     // 1. Asphalt Road
     asphaltCurve.getPoint(t, tmp);
     asphaltCurve.getTangent(t, tan);
-    const roadSlopeT = THREE.MathUtils.clamp((tmp.z + 465) / 718, 0, 1);
-    const roadElev = 210.0 * Math.pow(1.0 - roadSlopeT, 1.38) + 1.25;
-    asphaltSamples.push({ x: tmp.x, z: tmp.z, baseElevation: roadElev, tx: tan.x, tz: tan.z });
+    asphaltSamples.push({ x: tmp.x, z: tmp.z, t, kickerBoost: 0, tx: tan.x, tz: tan.z });
 
     // 2. Dirt Singletrack + Rollers + Jump Kickers
     dirtCurve.getPoint(t, tmp);
     dirtCurve.getTangent(t, tan);
-    const dirtSlopeT = THREE.MathUtils.clamp((tmp.z + 465) / 718, 0, 1);
-    const rollers = Math.sin(t * Math.PI * 46) * 0.55 * Math.sin(t * Math.PI);
-    const kicker = evaluateKickerBoost(t);
-    const dirtElev = 210.0 * Math.pow(1.0 - dirtSlopeT, 1.38) + 1.15 + rollers + kicker;
-    dirtSamples.push({ x: tmp.x, z: tmp.z, baseElevation: dirtElev, tx: tan.x, tz: tan.z });
+    const rollers = Math.sin(t * Math.PI * 38) * 0.35 * Math.sin(t * Math.PI);
+    const kicker = evaluateKickerBoost(t) + rollers;
+    dirtSamples.push({ x: tmp.x, z: tmp.z, t, kickerBoost: kicker, tx: tan.x, tz: tan.z });
 
-    // 3. River Canyon (Carved below WATER_LEVEL = 0)
+    // 3. Downhill Whitewater River
     riverCurve.getPoint(t, tmp);
     riverCurve.getTangent(t, tan);
-    riverSamples.push({ x: tmp.x, z: tmp.z, baseElevation: WATER_LEVEL - 2.8, tx: tan.x, tz: tan.z });
+    riverSamples.push({ x: tmp.x, z: tmp.z, t, kickerBoost: 0, tx: tan.x, tz: tan.z });
   }
 }
 initSplineSamples();
@@ -162,10 +164,10 @@ function evaluatePoint(x: number, z: number): {
   dirtBlend: number;
 } {
   let rawH = computeRawMountainElevation(x, z);
+  const smoothSlopeH = Math.max(0, computeSmoothSlopeElevation(z));
 
   // 1. Find closest distance to Asphalt Road spline
   let minRoadDistSq = Infinity;
-  let closestRoadElev = rawH;
   for (let i = 0; i < asphaltSamples.length; i++) {
     const s = asphaltSamples[i];
     const dz = s.z - z;
@@ -174,13 +176,12 @@ function evaluatePoint(x: number, z: number): {
     const dSq = dx * dx + dz * dz;
     if (dSq < minRoadDistSq) {
       minRoadDistSq = dSq;
-      closestRoadElev = s.baseElevation;
     }
   }
 
   // 2. Find closest distance to Dirt Trail spline
   let minDirtDistSq = Infinity;
-  let closestDirtElev = rawH;
+  let closestDirtKicker = 0;
   for (let i = 0; i < dirtSamples.length; i++) {
     const s = dirtSamples[i];
     const dz = s.z - z;
@@ -189,11 +190,11 @@ function evaluatePoint(x: number, z: number): {
     const dSq = dx * dx + dz * dz;
     if (dSq < minDirtDistSq) {
       minDirtDistSq = dSq;
-      closestDirtElev = s.baseElevation;
+      closestDirtKicker = s.kickerBoost;
     }
   }
 
-  // 3. Find closest distance to Whitewater River Canyon spline
+  // 3. Find closest distance to Downhill Whitewater River spline
   let minRiverDistSq = Infinity;
   for (let i = 0; i < riverSamples.length; i++) {
     const s = riverSamples[i];
@@ -210,34 +211,40 @@ function evaluatePoint(x: number, z: number): {
   const dirtDist = Math.sqrt(minDirtDistSq);
   const riverDist = Math.sqrt(minRiverDistSq);
 
-  // Carve the Whitewater River Canyon into the eastern mountain flank (Z > -148)
-  if (z > -150 && riverDist < 26.0) {
-    const canyonBlend = 1.0 - THREE.MathUtils.smoothstep(riverDist, 7.5, 26.0);
-    const channelDepth =
-      riverDist < 8.5 ? WATER_LEVEL - 2.6 * Math.cos((riverDist / 8.5) * Math.PI * 0.42) : WATER_LEVEL + 0.6;
-    rawH = THREE.MathUtils.lerp(rawH, channelDepth, canyonBlend);
+  // Carve the Downhill Mountain Whitewater River Channel (from Z = -282 down to Mirror Lake at Z = +252)
+  const inRiverZone = z > -282 && z < 260 && riverDist < 22.0;
+  if (inRiverZone) {
+    const canyonBlend = 1.0 - THREE.MathUtils.smoothstep(riverDist, 6.2, 22.0);
+    // River bed follows the downhill mountain slope (-1.35m trough in center, +1.8m rocky banks)
+    const riverBedH =
+      riverDist < 7.2
+        ? smoothSlopeH - 1.35 * Math.cos((riverDist / 7.2) * Math.PI * 0.45)
+        : smoothSlopeH + 1.8;
+    rawH = THREE.MathUtils.lerp(rawH, riverBedH, canyonBlend);
   }
 
-  // Dirt trail carving profile: 2.8m half-width core, 7.5m shoulder
-  const dirtFlatten = 1.0 - THREE.MathUtils.smoothstep(dirtDist, 2.6, 7.8);
-  const dirtCarve = dirtDist < 2.8 ? -0.18 * Math.cos((dirtDist / 2.8) * Math.PI * 0.5) : 0;
-  rawH = THREE.MathUtils.lerp(rawH, closestDirtElev + dirtCarve, dirtFlatten);
+  // Dirt trail carving profile: uses pure analytical smoothSlopeH + closestDirtKicker
+  const dirtTargetElev = smoothSlopeH + 1.15 + closestDirtKicker;
+  const dirtFlatten = 1.0 - THREE.MathUtils.smoothstep(dirtDist, 2.6, 8.2);
+  const dirtCarve = dirtDist < 2.8 ? -0.12 * Math.cos((dirtDist / 2.8) * Math.PI * 0.5) : 0;
+  rawH = THREE.MathUtils.lerp(rawH, dirtTargetElev + dirtCarve, dirtFlatten);
 
-  // Road flattening profile: 5.2m half-width core, 12.5m smooth embankment shoulder
-  const roadFlatten = 1.0 - THREE.MathUtils.smoothstep(roadDist, 4.8, 12.5);
-  rawH = THREE.MathUtils.lerp(rawH, closestRoadElev, roadFlatten);
+  // Road flattening profile: uses pure analytical smoothSlopeH + 1.25 (ZERO discrete sample steps!)
+  const roadTargetElev = smoothSlopeH + 1.25;
+  const roadFlatten = 1.0 - THREE.MathUtils.smoothstep(roadDist, 5.2, 14.0);
+  rawH = THREE.MathUtils.lerp(rawH, roadTargetElev, roadFlatten);
 
   // Determine dominant surface code
   let surfaceCode = 0; // GRASS
-  if (rawH < WATER_LEVEL + 0.15) {
-    surfaceCode = 5; // WATER
+  if (rawH < WATER_LEVEL + 0.15 || (z > -278 && z < 255 && riverDist < 5.8)) {
+    surfaceCode = 5; // WATER (Lake OR Downhill Mountain River Rapids!)
   } else if (roadDist < 4.6 && z < 252) {
     surfaceCode = 1; // ASPHALT
   } else if (dirtDist < 2.75 && z < 250) {
     surfaceCode = 2; // DIRT
-  } else if (rawH < WATER_LEVEL + 1.85 && (z > 210 || riverDist < 12.5)) {
+  } else if ((rawH < WATER_LEVEL + 1.85 && z > 210) || (z > -278 && z < 255 && riverDist < 9.2)) {
     surfaceCode = 4; // SAND / SHORE / RIVER BANK
-  } else if (rawH > 88 || Math.abs(x) > 95 || (riverDist >= 8.5 && riverDist < 19.0 && z > -140 && z < 220)) {
+  } else if (rawH > 135 || Math.abs(x) > 95 || (riverDist >= 9.2 && riverDist < 17.5 && z > -275 && z < 220)) {
     surfaceCode = 3; // ROCK / CANYON WALLS
   }
 
@@ -280,12 +287,10 @@ export function getTerrainHeightOnly(x: number, z: number): number {
   const h01 = heightGrid[i01];
   const h11 = heightGrid[i11];
 
-  // Exact triangle interpolation matching Three.js PlaneGeometry diagonal split
-  if (fx + fz <= 1.0) {
-    return h00 + fx * (h10 - h00) + fz * (h01 - h00);
-  } else {
-    return h11 + (1.0 - fx) * (h01 - h11) + (1.0 - fz) * (h10 - h11);
-  }
+  // Smooth bilinear interpolation (eliminates diagonal triangle crease bumps!)
+  const h0 = h00 + fx * (h10 - h00);
+  const h1 = h01 + fx * (h11 - h01);
+  return h0 + fz * (h1 - h0);
 }
 
 // Update spline Y coordinates so prop placement has exact 3D heights
@@ -351,7 +356,7 @@ function buildFallenLogs(): FallenLogObstacle[] {
 export const FALLEN_LOGS: FallenLogObstacle[] = buildFallenLogs();
 
 /**
- * Evaluates directional river current vector at (x, z) for Canoe canyon gliding.
+ * Evaluates directional river current vector at (x, z) for Downhill Whitewater Canoe/Kayak rapids.
  * Zero allocations in useFrame.
  */
 export function getRiverCurrentVector(x: number, z: number, outVec: THREE.Vector3): THREE.Vector3 {
@@ -373,8 +378,8 @@ export function getRiverCurrentVector(x: number, z: number, outVec: THREE.Vector
   }
 
   if (minDistSq < 400 && z < 265) {
-    // Fast canyon current (up to 4.2 m/s along river tangent)
-    const strength = THREE.MathUtils.lerp(4.2, 1.4, THREE.MathUtils.clamp((z + 135) / 400, 0, 1));
+    // Fast downhill whitewater rapids current (up to 6.8 m/s along river tangent)
+    const strength = THREE.MathUtils.lerp(6.8, 1.8, THREE.MathUtils.clamp((z + 280) / 535, 0, 1));
     outVec.set(bestTx * strength, 0, bestTz * strength);
   } else {
     // Gentle lake breeze drift
@@ -399,7 +404,7 @@ const _sampleResult: TerrainSample = {
 
 /**
  * Zero-allocation O(1) terrain query for useFrame physics.
- * Populates `outNormal` with the exact surface normal at (x, z).
+ * Uses smooth Bilinear Interpolation so there are ZERO diagonal triangle crease bumps!
  */
 export function sampleTerrain(x: number, z: number, outNormal: THREE.Vector3): TerrainSample {
   const gx = (x / TERRAIN_WIDTH + 0.5) * GRID_SEGMENTS_X;
@@ -423,19 +428,13 @@ export function sampleTerrain(x: number, z: number, outNormal: THREE.Vector3): T
   const cellW = TERRAIN_WIDTH / GRID_SEGMENTS_X;
   const cellL = TERRAIN_LENGTH / GRID_SEGMENTS_Z;
 
-  let height = 0;
-  let dhdx = 0;
-  let dhdz = 0;
+  // Smooth Bilinear Interpolation of height and partial derivatives (dhdx, dhdz)
+  const h0 = h00 + fx * (h10 - h00);
+  const h1 = h01 + fx * (h11 - h01);
+  const height = h0 + fz * (h1 - h0);
 
-  if (fx + fz <= 1.0) {
-    height = h00 + fx * (h10 - h00) + fz * (h01 - h00);
-    dhdx = (h10 - h00) / cellW;
-    dhdz = (h01 - h00) / cellL;
-  } else {
-    height = h11 + (1.0 - fx) * (h01 - h11) + (1.0 - fz) * (h10 - h11);
-    dhdx = (h11 - h01) / cellW;
-    dhdz = (h11 - h10) / cellL;
-  }
+  const dhdx = ((1.0 - fz) * (h10 - h00) + fz * (h11 - h01)) / cellW;
+  const dhdz = (h1 - h0) / cellL;
 
   outNormal.set(-dhdx, 1.0, -dhdz).normalize();
 
@@ -444,7 +443,10 @@ export function sampleTerrain(x: number, z: number, outNormal: THREE.Vector3): T
   const nearZ = fz < 0.5 ? iz : iz + 1;
   const sCode = surfaceGrid[nearZ * COLS + nearX] ?? 0;
 
-  const waterDepth = Math.max(0, WATER_LEVEL - height);
+  // In the Downhill Whitewater River (sCode === 5 at z < 252), waterDepth is 1.2m so Canoe/Kayak glides down the slope!
+  const lakeDepth = Math.max(0, WATER_LEVEL - height);
+  const waterDepth = sCode === 5 ? Math.max(1.2, lakeDepth) : lakeDepth;
+
   _sampleResult.height = height;
   _sampleResult.waterDepth = waterDepth;
   _sampleResult.surface = waterDepth > 0.25 ? 'WATER' : (SURFACE_MAP[sCode] ?? 'GRASS');

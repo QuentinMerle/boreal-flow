@@ -164,8 +164,9 @@ export const ArcadeController: React.FC = () => {
       p.yaw = 0.22;
     } else if (spawnTarget === 'LAKE_SHORE') {
       p.specialState = 'NONE';
-      p.position.set(2, WATER_LEVEL + 0.5, 256);
-      p.yaw = 0.0;
+      // Spawn at the High-Mountain Whitewater Rapids Put-In (Z = -272, Altitude ~120m)
+      p.position.set(53.5, 120, -272);
+      p.yaw = -0.05;
     } else if (spawnTarget === 'FIREWATCH_TOWER') {
       p.specialState = 'NONE';
       p.position.set(TOWER_BASE_X, TOWER_BASE_Y + TOWER_DECK_HEIGHT + 0.3, TOWER_BASE_Z + 2.2);
@@ -626,7 +627,10 @@ export const ArcadeController: React.FC = () => {
       p.waterDepth = terrain.waterDepth;
 
       const isOnWater = terrain.waterDepth > 0.2;
-      let effectiveGroundY = isOnWater && mode === 'CANOE' ? WATER_LEVEL : terrain.height;
+      let effectiveGroundY =
+        isOnWater && mode === 'CANOE'
+          ? Math.max(WATER_LEVEL, terrain.height + 0.25)
+          : terrain.height;
 
       const onTowerDeck =
         Math.abs(p.position.x - TOWER_BASE_X) < 4.4 &&
@@ -653,20 +657,23 @@ export const ArcadeController: React.FC = () => {
         p.specialState = 'CLIMBING';
       }
 
-      const groundedThreshold = 0.25;
+      const groundedThreshold = 0.28;
       p.isGrounded = p.position.y <= effectiveGroundY + groundedThreshold && p.velocity.y <= 1.5;
 
-      // 2. Steering & Speed-Dependent Turn Radius (WP 3.5 Anti-YOLO Mastery Curve!)
+      // 2. Steering & Speed-Dependent Turn Radius + Expressive Stand-Up Longboard Powerslides!
+      // Longboard powerslide triggers effortlessly when holding Shift / S (Brake) / Space / LT while turning!
       const wantsDrift =
         (mode === 'LONGBOARD' &&
           (inp.shiftDrift ||
             padDriftBtn ||
-            padBrake > 0.2 ||
-            (wantsHop && Math.abs(steerInput) >= 0.28))) ||
+            isBraking ||
+            padBrake > 0.15 ||
+            wantsHop) &&
+          Math.abs(steerInput) >= 0.18) ||
         (mode === 'BIKE' && (inp.shiftDrift || padDriftBtn || isBraking) && Math.abs(steerInput) > 0.1);
 
       const wasDrifting = p.isDrifting;
-      p.isDrifting = p.isGrounded && wantsDrift && p.speed > 5.5;
+      p.isDrifting = p.isGrounded && wantsDrift && p.speed > 4.2;
       if (p.isDrifting) {
         sp.driftCharge = Math.min(1.2, sp.driftCharge + dt);
         triggerHaptic(pad, 65, 0.12, 0.32);
@@ -684,7 +691,7 @@ export const ArcadeController: React.FC = () => {
         );
         speedFactor = p.speed < 8.5 ? lowSpeedRamp : highSpeedStiffening;
       }
-      const driftTurnBoost = p.isDrifting ? 2.15 : 1.0;
+      const driftTurnBoost = p.isDrifting ? (mode === 'LONGBOARD' ? 2.38 : 2.15) : 1.0;
       p.yaw += steerInput * preset.turnSpeed * speedFactor * driftTurnBoost * dt;
 
       _forward.set(Math.sin(p.yaw), 0, Math.cos(p.yaw)).normalize();
@@ -697,15 +704,15 @@ export const ArcadeController: React.FC = () => {
       let lateralVel = _velHorizontal.dot(_right);
 
       // Drift Exit Boost: releasing a sustained powerslide snaps the wheels back into traction with a speed kick!
-      if (wasDrifting && !p.isDrifting && sp.driftCharge > 0.32 && p.isGrounded && forwardVel > 6.0) {
-        forwardVel = Math.min(preset.maxSpeed, forwardVel + Math.min(2.6, sp.driftCharge * 2.4));
+      if (wasDrifting && !p.isDrifting && sp.driftCharge > 0.24 && p.isGrounded && forwardVel > 5.0) {
+        forwardVel = Math.min(preset.maxSpeed, forwardVel + Math.min(3.0, sp.driftCharge * 2.6));
         sp.driftCharge = 0;
         triggerHaptic(pad, 75, 0.35, 0.45);
       } else if (!p.isDrifting) {
         sp.driftCharge = Math.max(0, sp.driftCharge - dt * 2.5);
       }
 
-      // 4. Slope Gravity Projection (with Longboard Aero Tuck boost!)
+      // 4. Slope Gravity Projection (Longboard Aero Tuck + Downhill Whitewater Kayak/Canoe!)
       _slopeDown.set(_groundNormal.x, 0, _groundNormal.z);
       const slopeStrength = _slopeDown.length();
       p.slopeAngle = Math.asin(THREE.MathUtils.clamp(slopeStrength, 0, 1)) * (180 / Math.PI);
@@ -713,7 +720,8 @@ export const ArcadeController: React.FC = () => {
       const isLongboardAeroTuck =
         mode === 'LONGBOARD' && accelInput > 0.2 && forwardVel > 9.5 && !p.isDrifting;
 
-      if (p.isGrounded && !isOnWater && !onTowerDeck && mode !== 'WALK') {
+      const isDownhillRiverCanoe = isOnWater && mode === 'CANOE' && p.position.z < 245;
+      if (p.isGrounded && (!isOnWater || isDownhillRiverCanoe) && !onTowerDeck && mode !== 'WALK') {
         const downhillDot = _slopeDown.dot(_forward);
         const tuckGravityBoost = isLongboardAeroTuck && downhillDot > 0 ? 1.26 : 1.0;
         const gravityAccel = 22.0 * preset.gravityScale * tuckGravityBoost;
@@ -846,7 +854,8 @@ export const ArcadeController: React.FC = () => {
 
       if (isBraking && mode !== 'WALK') {
         if (forwardVel > 0.5) {
-          const brakeDecel = p.isDrifting ? 12.5 : 21.0;
+          // During a Longboard powerslide, carving sideways scrubs speed smoothly without killing all momentum
+          const brakeDecel = p.isDrifting ? (mode === 'LONGBOARD' ? 7.5 : 12.5) : 21.0;
           forwardVel = Math.max(0, forwardVel - brakeDecel * Math.max(0.65, brakeInput) * dt);
         } else {
           forwardVel = THREE.MathUtils.damp(forwardVel, -3.5, 4, dt);
@@ -874,13 +883,13 @@ export const ArcadeController: React.FC = () => {
           const alongDist = Math.abs(dx * cosY - dz * sinY);
           const perpDist = Math.abs(dx * sinY + dz * cosY);
           if (alongDist < halfLen && perpDist < log.radius + 0.45) {
-            const clearanceY = log.position.y + log.radius * 0.72;
+            const clearanceY = log.position.y + log.radius * 0.45;
             if (p.position.y < clearanceY && sp.hopCooldown <= 0.15) {
               // Player hit the log without hopping high enough -> tactile stumble & bounce!
-              p.velocity.y = 4.4;
+              p.velocity.y = 3.2;
               p.isGrounded = false;
               forwardVel *= 0.42;
-              sp.bounceVel = -6.5;
+              sp.bounceVel = -5.0;
               sp.hopCooldown = 0.42;
               soundscape.triggerHopSound();
               triggerHaptic(pad, 150, 0.85, 0.65);
@@ -896,7 +905,7 @@ export const ArcadeController: React.FC = () => {
 
       // 7. Vertical Integration, Kicker Launch & Ground Snapping
       const wasGroundedBeforeStep = p.isGrounded;
-      p.velocity.y -= 24.0 * dt;
+      p.velocity.y -= 28.5 * dt;
       p.position.x += p.velocity.x * dt;
       p.position.y += p.velocity.y * dt;
       p.position.z += p.velocity.z * dt;
@@ -944,7 +953,7 @@ export const ArcadeController: React.FC = () => {
       const newOnWater = newTerrain.waterDepth > 0.2;
       let targetFloorY =
         newOnWater && mode === 'CANOE'
-          ? WATER_LEVEL + Math.sin(elapsed * 3.0) * 0.06
+          ? Math.max(WATER_LEVEL, newTerrain.height + 0.25) + Math.sin(elapsed * 3.5) * 0.04
           : newTerrain.height;
 
       const stillOnTowerDeck =
@@ -964,25 +973,25 @@ export const ArcadeController: React.FC = () => {
         !newOnWater &&
         p.surface === 'DIRT' &&
         (mode === 'BIKE' || mode === 'LONGBOARD') &&
-        p.speed > 9.5 &&
-        sp.prevClimbVel > 2.6 &&
-        currentClimbVel < sp.prevClimbVel - 2.4;
+        p.speed > 10.5 &&
+        sp.prevClimbVel > 2.8 &&
+        currentClimbVel < sp.prevClimbVel - 2.5;
 
       if (isCrestingDirtKicker) {
-        p.velocity.y = Math.min(11.0, Math.max(4.8, sp.prevClimbVel * 1.15));
-        p.position.y = targetFloorY + 0.12;
+        p.velocity.y = Math.min(6.4, Math.max(3.6, sp.prevClimbVel * 0.82));
+        p.position.y = targetFloorY + 0.08;
         p.isGrounded = false;
-        sp.bounceVel = 4.5;
+        sp.bounceVel = 2.6;
         soundscape.triggerHopSound();
         triggerHaptic(pad, 100, 0.5, 0.4);
       } else if (
         p.position.y <= targetFloorY ||
-        (wasGroundedBeforeStep && p.velocity.y <= 0.05 && p.position.y - targetFloorY < 0.65)
+        (wasGroundedBeforeStep && p.velocity.y <= 0.05 && p.position.y - targetFloorY < 0.85)
       ) {
         // Stick smoothly to downhill slopes without micro-bouncing into the air!
-        if (!wasGroundedBeforeStep && p.velocity.y < -4.5) {
-          sp.bounceVel = p.velocity.y * 0.28;
-          triggerHaptic(pad, 120, Math.min(1, Math.abs(p.velocity.y) / 12), 0.45);
+        if (!wasGroundedBeforeStep && p.velocity.y < -5.5) {
+          sp.bounceVel = p.velocity.y * 0.22;
+          triggerHaptic(pad, 120, Math.min(1, Math.abs(p.velocity.y) / 14), 0.45);
         }
         p.position.y = targetFloorY;
         p.velocity.y = 0;
@@ -1000,7 +1009,7 @@ export const ArcadeController: React.FC = () => {
       rootGroupRef.current.position.copy(p.position);
 
       const effectiveNormal =
-        p.specialState !== 'NONE' || (p.waterDepth > 0.2 && mode === 'CANOE')
+        p.specialState !== 'NONE' || (p.waterDepth > 0.2 && mode === 'CANOE' && p.position.z >= 245)
           ? _upVec
           : _groundNormal;
 
@@ -1017,7 +1026,7 @@ export const ArcadeController: React.FC = () => {
           : p.specialState === 'ZIPLINE'
           ? Math.sin(elapsed * 3.5) * 0.14 - steerInput * 0.25
           : -steerInput * preset.leanFactor * THREE.MathUtils.clamp(p.speed / 12, 0.35, 1.35) +
-            (p.isDrifting ? -steerInput * 0.28 : 0);
+            (p.isDrifting ? -steerInput * 0.34 : 0);
 
       const targetPitch =
         p.specialState === 'CAMPFIRE'
@@ -1028,17 +1037,21 @@ export const ArcadeController: React.FC = () => {
           ? THREE.MathUtils.clamp(-p.velocity.y * 0.04, -0.35, 0.35)
           : 0;
 
-      // Extra responsive visual carve yaw into turns & powerslides
+      // Extra responsive visual carve yaw into turns & dramatic 68° sideways Longboard stand-up powerslides!
+      const slideSign =
+        Math.abs(steerInput) > 0.08 ? Math.sign(steerInput) : p.lateralSpeed >= 0 ? -1 : 1;
       const targetCarveYaw =
         p.specialState !== 'NONE'
           ? 0
           : p.isDrifting
-          ? steerInput * 0.52
+          ? mode === 'LONGBOARD'
+            ? slideSign * (0.85 + Math.abs(steerInput) * 0.35)
+            : steerInput * 0.62
           : steerInput * 0.22;
 
       sp.roll = THREE.MathUtils.damp(sp.roll, targetRoll, 10.0, dt);
       sp.pitch = THREE.MathUtils.damp(sp.pitch, targetPitch, 8.0, dt);
-      sp.carveYaw = THREE.MathUtils.damp(sp.carveYaw, targetCarveYaw, 10.0, dt);
+      sp.carveYaw = THREE.MathUtils.damp(sp.carveYaw, targetCarveYaw, 11.0, dt);
 
       sp.bounceVel += -120 * sp.bounceY * dt;
       sp.bounceVel *= Math.exp(-10 * dt);
@@ -1172,8 +1185,14 @@ export const ArcadeController: React.FC = () => {
         rightLegRef.current.rotation.set(-0.4 + Math.sin(climbCycle) * 0.45, 0, -0.1);
       } else if (mode === 'LONGBOARD') {
         const isAeroTuck = p.speed > 12.5 && accelInput > 0.2 && !p.isDrifting;
-        const targetTorsoPitch = isAeroTuck ? 0.58 : sp.pushAnimTimer > 0 ? 0.28 : 0.12;
-        const targetTorsoYaw = steerInput * 0.28;
+        const targetTorsoPitch = p.isDrifting
+          ? 0.42
+          : isAeroTuck
+          ? 0.58
+          : sp.pushAnimTimer > 0
+          ? 0.28
+          : 0.12;
+        const targetTorsoYaw = p.isDrifting ? -steerInput * 0.55 : steerInput * 0.28;
         torsoRef.current.rotation.x = THREE.MathUtils.damp(
           torsoRef.current.rotation.x,
           targetTorsoPitch,
@@ -1190,6 +1209,10 @@ export const ArcadeController: React.FC = () => {
         if (isAeroTuck) {
           leftArmRef.current.rotation.set(0.75, 0, 0.25);
           rightArmRef.current.rotation.set(0.75, 0, -0.25);
+        } else if (p.isDrifting) {
+          // Expressive counter-balance arm spread during a stand-up powerslide!
+          leftArmRef.current.rotation.set(-0.35, 0, 1.25);
+          rightArmRef.current.rotation.set(0.35, 0, -1.25);
         } else {
           const wave = Math.sin(elapsed * 3.5) * 0.08;
           leftArmRef.current.rotation.set(-0.2 + steerInput * 0.3, 0, 0.85 + wave);

@@ -31,8 +31,8 @@ export const TRANSITION_STATIONS: TransitionStation[] = [
   },
   {
     id: 'dock-canyon-river',
-    label: 'Canyon River Canoe Put-In',
-    position: new THREE.Vector3(62, Math.max(WATER_LEVEL + 0.35, getTerrainHeightOnly(62, -135)), -135),
+    label: 'Whitewater Rapids Put-In',
+    position: new THREE.Vector3(48, getTerrainHeightOnly(48, -272) + 0.15, -272),
     targetMode: 'CANOE',
     altMode: 'BIKE',
     color: '#4ea8de',
