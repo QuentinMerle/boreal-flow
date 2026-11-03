@@ -1177,11 +1177,12 @@ export const ArcadeController: React.FC = () => {
         rightLegRef.current.rotation.set(Math.sin(sp.pedalPhase + Math.PI) * 0.55 - 0.2, 0, 0);
       } else if (mode === 'CANOE') {
         const stroke = Math.sin(p.paddlePhase);
-        torsoRef.current.rotation.set(0.15 + stroke * 0.18, -p.paddleSide * 0.25 * stroke, 0);
-        leftArmRef.current.rotation.set(-0.7 + stroke * 0.45, 0, 0.25);
-        rightArmRef.current.rotation.set(-0.7 + stroke * 0.45, 0, -0.25);
-        leftLegRef.current.rotation.set(-1.1, 0, 0);
-        rightLegRef.current.rotation.set(-1.1, 0, 0);
+        const side = p.paddleSide;
+        torsoRef.current.rotation.set(0.18 + stroke * 0.16, -side * 0.22, -side * 0.08);
+        leftArmRef.current.rotation.set(-0.95 + stroke * 0.42, -side * 0.25, side > 0 ? -0.35 : 0.15);
+        rightArmRef.current.rotation.set(-0.95 + stroke * 0.42, -side * 0.25, side < 0 ? 0.35 : -0.15);
+        leftLegRef.current.rotation.set(-1.32, 0.1, 0);
+        rightLegRef.current.rotation.set(-1.32, -0.1, 0);
       } else {
         const stride = p.speed > 0.4 ? Math.sin(sp.walkBob) * Math.min(1, p.speed / 6) : 0;
         torsoRef.current.rotation.set(p.speed * 0.015, -stride * 0.15, 0);
@@ -1250,8 +1251,18 @@ export const ArcadeController: React.FC = () => {
 
     if (paddleRef.current && mode === 'CANOE') {
       const phase = p.paddlePhase;
-      paddleRef.current.rotation.z = p.paddleSide * 0.45 + Math.cos(phase) * 0.25;
-      paddleRef.current.rotation.x = Math.sin(phase) * 0.55;
+      const side = p.paddleSide;
+      paddleRef.current.position.x = THREE.MathUtils.damp(
+        paddleRef.current.position.x,
+        side * 0.36,
+        10,
+        dt
+      );
+      paddleRef.current.position.y = 0.56 - Math.max(0, Math.sin(phase)) * 0.08;
+      paddleRef.current.position.z = 0.26;
+      // Positive rotation.z when side=+1 tilts bottom (-Y blade) outward toward +X into the water!
+      paddleRef.current.rotation.z = side * (0.34 + Math.cos(phase) * 0.1);
+      paddleRef.current.rotation.x = -Math.sin(phase) * 0.52;
     }
 
     // 9. Automatic Warm Front Headlamp at Dusk/Night
@@ -1392,7 +1403,7 @@ const ExplorerCharacter: React.FC<{
     : mode === 'BIKE'
     ? 0.38
     : mode === 'CANOE'
-    ? -0.08
+    ? -0.22
     : 0;
   const bodyRotY = !isSpecial && mode === 'LONGBOARD' ? 0.45 : 0;
 
