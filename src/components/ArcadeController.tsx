@@ -310,6 +310,7 @@ export const ArcadeController: React.FC = () => {
 
       if (code === 'Escape' || code === 'KeyP') {
         const st = useGameStore.getState();
+        if (!st.gameStarted) return;
         if (st.binocularsActive) {
           st.setBinocularsActive(false);
         } else {
@@ -485,9 +486,13 @@ export const ArcadeController: React.FC = () => {
         triggerHaptic(pad, 100, 0.5, 0.4);
       }
 
-      // Button 9 (Menu / Start): Toggle Pause Menu
-      if (wasJustPressed(9)) {
-        useGameStore.getState().togglePause();
+      // Button 9 (Menu / Start): Toggle Pause Menu or Start Game from Title
+      if (wasJustPressed(9) || (!useGameStore.getState().gameStarted && wasJustPressed(0))) {
+        if (!useGameStore.getState().gameStarted) {
+          useGameStore.getState().startGame();
+        } else {
+          useGameStore.getState().togglePause();
+        }
         triggerHaptic(pad, 80, 0.3, 0.4);
       }
 

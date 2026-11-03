@@ -9,6 +9,7 @@ import {
 } from '../state/gameStore';
 import { WILDLIFE_SPECIES } from '../world/parkActivitiesData';
 import { soundscape } from '../audio/soundscape';
+import { TitleScreen } from './TitleScreen';
 
 const MODES: MovementMode[] = ['WALK', 'LONGBOARD', 'BIKE', 'CANOE'];
 
@@ -20,6 +21,7 @@ const MODE_ICONS: Record<MovementMode, string> = {
 };
 
 export const HudOverlay: React.FC = () => {
+  const gameStarted = useGameStore((s) => s.gameStarted);
   const mode = useGameStore((s) => s.mode);
   const isPaused = useGameStore((s) => s.isPaused);
   const timeCyclePaused = useGameStore((s) => s.timeCyclePaused);
@@ -44,6 +46,7 @@ export const HudOverlay: React.FC = () => {
   const toggleAudioMute = useGameStore((s) => s.toggleAudioMute);
   const toggleBinoculars = useGameStore((s) => s.toggleBinoculars);
   const toggleCameraMode = useGameStore((s) => s.toggleCameraMode);
+  const returnToTitle = useGameStore((s) => s.returnToTitle);
 
   const speedDomRef = useRef<HTMLSpanElement>(null);
   const telemetryWrapRef = useRef<HTMLDivElement>(null);
@@ -61,6 +64,10 @@ export const HudOverlay: React.FC = () => {
     let rafId = 0;
 
     const updateTelemetry = () => {
+      if (!useGameStore.getState().gameStarted) {
+        rafId = requestAnimationFrame(updateTelemetry);
+        return;
+      }
       const p = mutablePhysics;
       const kmh = Math.round(p.speed * 2.4);
 
@@ -174,8 +181,11 @@ export const HudOverlay: React.FC = () => {
         fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
       }}
     >
+      {/* Title / Welcome Screen when game has not started */}
+      {!gameStarted && <TitleScreen />}
+
       {/* Subtle Tilt-Shift / Distance Horizon Depth-of-Field Blur (Zero WebGL GPU cost) */}
-      {!binocularsActive && !isPaused && (
+      {gameStarted && !binocularsActive && !isPaused && (
         <div
           style={{
             position: 'fixed',
@@ -443,7 +453,7 @@ export const HudOverlay: React.FC = () => {
 
       {/* --- ULTRA-MINIMAL TOP BAR (Only a whisper-quiet Pause Pill in Top-Right!) --- */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', zIndex: 20 }}>
-        {!isPaused && (
+        {gameStarted && !isPaused && (
           <button
             onClick={() => {
               soundscape.init();
@@ -474,7 +484,7 @@ export const HudOverlay: React.FC = () => {
       </div>
 
       {/* --- ULTRA-ORGANIC BOTTOM BAR (Discreet Mode Pill + Frameless Speed Readout) --- */}
-      {!isPaused && (
+      {gameStarted && !isPaused && (
         <div
           style={{
             display: 'flex',
@@ -726,43 +736,74 @@ export const HudOverlay: React.FC = () => {
                 </div>
               </div>
 
-              <button
-                onClick={() => setPaused(false)}
-                style={{
-                  background: 'linear-gradient(135deg, #06d6a0 0%, #05b386 100%)',
-                  color: '#0f1715',
-                  border: 'none',
-                  borderRadius: '12px',
-                  padding: '10px 18px',
-                  fontSize: '12.5px',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 16px rgba(6, 214, 160, 0.35), inset 0 1px 0 rgba(255,255,255,0.4)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  transition: 'transform 0.12s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'none';
-                }}
-              >
-                <span>▶ Reprendre</span>
-                <span
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  onClick={() => {
+                    setPaused(false);
+                    returnToTitle();
+                  }}
                   style={{
-                    fontSize: '9.5px',
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    color: '#e2e8f0',
+                    border: '1px solid rgba(255, 255, 255, 0.14)',
+                    borderRadius: '12px',
+                    padding: '10px 14px',
+                    fontSize: '12px',
                     fontWeight: 700,
-                    background: 'rgba(0, 0, 0, 0.22)',
-                    padding: '2px 5px',
-                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.12s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
                   }}
                 >
-                  ESC
-                </span>
-              </button>
+                  <span>🏠 Accueil</span>
+                </button>
+
+                <button
+                  onClick={() => setPaused(false)}
+                  style={{
+                    background: 'linear-gradient(135deg, #06d6a0 0%, #05b386 100%)',
+                    color: '#0f1715',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '10px 18px',
+                    fontSize: '12.5px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 16px rgba(6, 214, 160, 0.35), inset 0 1px 0 rgba(255,255,255,0.4)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'transform 0.12s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'none';
+                  }}
+                >
+                  <span>▶ Reprendre</span>
+                  <span
+                    style={{
+                      fontSize: '9.5px',
+                      fontWeight: 700,
+                      background: 'rgba(0, 0, 0, 0.22)',
+                      padding: '2px 5px',
+                      borderRadius: '4px',
+                    }}
+                  >
+                    ESC
+                  </span>
+                </button>
+              </div>
             </div>
 
             {/* Section 1: Teleport / Trailhead Grid */}

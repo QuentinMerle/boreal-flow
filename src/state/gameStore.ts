@@ -170,7 +170,7 @@ export const mutablePhysics: MutablePhysicsState = {
   scanProgress: 0,
   emoteTimer: 0,
   emoteCounter: 0,
-  isPaused: false,
+  isPaused: true,
   cameraMode: 'DIORAMA',
   gamepadConnected: false,
   gamepadName: '',
@@ -202,6 +202,7 @@ export function triggerPlayerEmote() {
 export type SpawnLocation = 'SUMMIT_ROAD' | 'SUMMIT_TRAIL' | 'LAKE_SHORE' | 'FIREWATCH_TOWER' | 'CAMPFIRE_HUB';
 
 interface GameUIState {
+  gameStarted: boolean;
   mode: MovementMode;
   isPaused: boolean;
   spawnCounter: number;
@@ -219,6 +220,8 @@ interface GameUIState {
   triathlonVehicles: MovementMode[];
   triathlonPB: number;
   setMode: (mode: MovementMode, withPoof?: boolean) => void;
+  startGame: (mode?: MovementMode, spawn?: SpawnLocation) => void;
+  returnToTitle: () => void;
   togglePause: () => void;
   setPaused: (paused: boolean) => void;
   respawnAt: (target: SpawnLocation, defaultMode?: MovementMode) => void;
@@ -245,8 +248,9 @@ export const TIME_PRESET_HOURS: Record<TimePreset, number> = {
 };
 
 export const useGameStore = create<GameUIState>((set) => ({
+  gameStarted: false,
   mode: 'LONGBOARD',
-  isPaused: false,
+  isPaused: true,
   spawnCounter: 0,
   spawnTarget: 'SUMMIT_ROAD',
   timeCyclePaused: false,
@@ -276,6 +280,28 @@ export const useGameStore = create<GameUIState>((set) => ({
         mode,
         binocularsActive: false,
         triathlonVehicles: [...mutablePhysics.triathlonVehicles],
+      };
+    }),
+  startGame: (chosenMode, targetSpawn) =>
+    set((state) => {
+      mutablePhysics.isPaused = false;
+      const mode = chosenMode ?? state.mode;
+      const spawn = targetSpawn ?? (mode === 'BIKE' ? 'SUMMIT_TRAIL' : 'SUMMIT_ROAD');
+      mutablePhysics.specialState = 'NONE';
+      return {
+        gameStarted: true,
+        isPaused: false,
+        mode,
+        spawnTarget: spawn,
+        spawnCounter: state.spawnCounter + 1,
+      };
+    }),
+  returnToTitle: () =>
+    set(() => {
+      mutablePhysics.isPaused = true;
+      return {
+        gameStarted: false,
+        isPaused: true,
       };
     }),
   togglePause: () =>
