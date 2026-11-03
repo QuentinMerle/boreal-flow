@@ -163,15 +163,15 @@ function createDistantMountainRingGeometry(
     if (i < segments) {
       const b = i * 4;
       const n = (i + 1) * 4;
-      // Lower foothill slope cradling the lake
-      indices.push(b, b + 1, n);
-      indices.push(b + 1, n + 1, n);
-      // Upper mountain face from foothill to peak
-      indices.push(b + 1, b + 2, n + 1);
-      indices.push(b + 2, n + 2, n + 1);
+      // Lower foothill slope (winding order: (v_n - v_b) x (v_{b+1} - v_b) points UP and INWARD toward the player!)
+      indices.push(b, n, b + 1);
+      indices.push(b + 1, n, n + 1);
+      // Upper mountain face from foothill to peak (points UP and INWARD!)
+      indices.push(b + 1, n + 1, b + 2);
+      indices.push(b + 2, n + 1, n + 2);
       // Outer back-slope
-      indices.push(b + 2, b + 3, n + 2);
-      indices.push(b + 3, n + 3, n + 2);
+      indices.push(b + 2, n + 2, b + 3);
+      indices.push(b + 3, n + 2, n + 3);
     }
   }
 

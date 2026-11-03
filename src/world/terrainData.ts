@@ -121,7 +121,13 @@ function computeRawMountainElevation(x: number, z: number): number {
   // Fade out rough terrain noise near the flat shore & lake basin
   const noiseMask = THREE.MathUtils.smoothstep(265 - z, 0, 95);
 
-  return baseHeight + canyonWall + (macroNoise + ridgeNoise) * noiseMask;
+  // Curved southern shoreline & wooded ridge enclosing Mirror Lake inside an oval alpine basin (no straight map-edge cut at Z=+500!)
+  const southArchZ = 432 - (x * x) * 0.0022 + simplex2D(x * 0.014, 7.3) * 16.0;
+  const southShoreT = THREE.MathUtils.smoothstep(z, southArchZ - 28, 496);
+  const southRidgeNoise = Math.abs(simplex2D(x * 0.018 + 4.2, z * 0.018)) * 14.0;
+  const southShoreRise = Math.pow(southShoreT, 1.45) * (34.0 + southRidgeNoise);
+
+  return baseHeight + canyonWall + southShoreRise + (macroNoise + ridgeNoise) * noiseMask;
 }
 
 // Pre-sample all 3 splines for fast 2D distance queries
