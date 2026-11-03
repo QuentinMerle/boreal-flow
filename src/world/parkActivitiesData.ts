@@ -16,15 +16,15 @@ export const TRANSITION_STATIONS: TransitionStation[] = [
   {
     id: 'rack-longboard',
     label: 'Summit Longboard Rack',
-    position: new THREE.Vector3(-10, getTerrainHeightOnly(-10, -448), -448),
+    position: new THREE.Vector3(-10, getTerrainHeightOnly(-10, -748), -748),
     targetMode: 'LONGBOARD',
     altMode: 'WALK',
     color: '#eb5e46',
   },
   {
     id: 'rack-bike',
-    label: 'Singletrack VTT Trailhead',
-    position: new THREE.Vector3(16, getTerrainHeightOnly(16, -448), -448),
+    label: 'Rampage VTT Trailhead',
+    position: new THREE.Vector3(16, getTerrainHeightOnly(16, -748), -748),
     targetMode: 'BIKE',
     altMode: 'WALK',
     color: '#52b788',
@@ -32,7 +32,7 @@ export const TRANSITION_STATIONS: TransitionStation[] = [
   {
     id: 'dock-canyon-river',
     label: 'Whitewater Rapids Put-In',
-    position: new THREE.Vector3(48, getTerrainHeightOnly(48, -272) + 0.15, -272),
+    position: new THREE.Vector3(48, getTerrainHeightOnly(48, -312) + 0.15, -312),
     targetMode: 'CANOE',
     altMode: 'BIKE',
     color: '#4ea8de',
@@ -40,14 +40,14 @@ export const TRANSITION_STATIONS: TransitionStation[] = [
   {
     id: 'dock-canoe',
     label: 'Mirror Lake Canoe Dock',
-    position: new THREE.Vector3(2, WATER_LEVEL + 0.3, 250),
+    position: new THREE.Vector3(2, WATER_LEVEL + 0.3, 480),
     targetMode: 'CANOE',
     altMode: 'WALK',
     color: '#4ea8de',
   },
 ];
 
-// --- Step 3.2: Acoustic Birdwatching & Wildlife Emitters (1,000m Map Layout) ---
+// --- Step 3.2: Acoustic Birdwatching & Wildlife Emitters (1,600m Map Layout) ---
 export interface WildlifeSpecies {
   id: string;
   name: string;
@@ -68,7 +68,7 @@ export const WILDLIFE_SPECIES: WildlifeSpecies[] = [
     name: 'Common Loon',
     frenchName: 'Plongeon Huard',
     biome: 'Mirror Lake Waters',
-    basePos: new THREE.Vector3(18, WATER_LEVEL + 0.25, 285),
+    basePos: new THREE.Vector3(18, WATER_LEVEL + 0.25, 525),
     color: '#1f2937',
     accentColor: '#f8fafc',
     callFreq: 580,
@@ -107,7 +107,7 @@ export const WILDLIFE_SPECIES: WildlifeSpecies[] = [
     name: 'Great Horned Owl',
     frenchName: 'Grand-Duc d’Amérique',
     biome: 'Summit Firewatch Tower',
-    basePos: new THREE.Vector3(0, getTerrainHeightOnly(0, -475) + 23.8, -475),
+    basePos: new THREE.Vector3(0, getTerrainHeightOnly(0, -775) + 23.8, -775),
     color: '#78593c',
     accentColor: '#f59e0b',
     callFreq: 340,
@@ -117,15 +117,15 @@ export const WILDLIFE_SPECIES: WildlifeSpecies[] = [
   },
 ];
 
-// --- Step 3.3: Summit Firewatch Tower & 700m Canyon Zipline ---
+// --- Step 3.3: Summit Firewatch Tower & 1,230m Canyon Zipline ---
 export const TOWER_BASE_X = 0;
-export const TOWER_BASE_Z = -475;
+export const TOWER_BASE_Z = -775;
 export const TOWER_BASE_Y = getTerrainHeightOnly(TOWER_BASE_X, TOWER_BASE_Z);
 export const TOWER_DECK_HEIGHT = 18.5; // Deck is at TOWER_BASE_Y + 18.5
 
-// Zipline stretches 700m from the Summit Firewatch Tower Deck all the way to the Lakeside Base Camp!
-export const ZIPLINE_START = new THREE.Vector3(2.4, TOWER_BASE_Y + TOWER_DECK_HEIGHT + 1.8, -471);
-export const ZIPLINE_END = new THREE.Vector3(-12, getTerrainHeightOnly(-12, 232) + 3.2, 232);
+// Zipline stretches 1,230m from the Summit Firewatch Tower Deck all the way to the Lakeside Base Camp!
+export const ZIPLINE_START = new THREE.Vector3(2.4, TOWER_BASE_Y + TOWER_DECK_HEIGHT + 1.8, -771);
+export const ZIPLINE_END = new THREE.Vector3(-12, getTerrainHeightOnly(-12, 462) + 3.2, 462);
 
 // Helper to evaluate position & tangent along the Zipline (with subtle natural cable sag)
 export function getZiplinePoint(t: number, outPos: THREE.Vector3): THREE.Vector3 {

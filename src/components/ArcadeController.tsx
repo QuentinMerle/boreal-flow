@@ -20,6 +20,7 @@ import {
   TERRAIN_LENGTH,
   getTerrainHeightOnly,
   FALLEN_LOGS,
+  KICKER_Z_CENTERS,
   getRiverCurrentVector,
   queryObstacleCollision,
 } from '../world/terrainData';
@@ -152,22 +153,22 @@ export const ArcadeController: React.FC = () => {
     soundscape.setMuted(audioMuted);
   }, [audioMuted]);
 
-  // Spawn / Teleport logic (1,000m Boreal Canyon coordinates)
+  // Spawn / Teleport logic (1,600m Red Bull Rampage -> Mirror Lake coordinates)
   useEffect(() => {
     const p = mutablePhysics;
 
     if (spawnTarget === 'SUMMIT_ROAD') {
       p.specialState = 'NONE';
-      p.position.set(-10, 210, -455);
-      p.yaw = -0.08;
+      p.position.set(-10, 332, -755);
+      p.yaw = -0.05;
     } else if (spawnTarget === 'SUMMIT_TRAIL') {
       p.specialState = 'NONE';
-      p.position.set(16, 210, -455);
+      p.position.set(16, 332, -755);
       p.yaw = 0.22;
     } else if (spawnTarget === 'LAKE_SHORE') {
       p.specialState = 'NONE';
-      // Spawn at the High-Mountain Whitewater Rapids Put-In (Z = -272, Altitude ~120m)
-      p.position.set(53.5, 120, -272);
+      // Spawn at the High-Mountain Whitewater Rapids Put-In (Z = -312)
+      p.position.set(53.5, 195, -312);
       p.yaw = -0.05;
     } else if (spawnTarget === 'FIREWATCH_TOWER') {
       p.specialState = 'NONE';
@@ -192,7 +193,7 @@ export const ArcadeController: React.FC = () => {
     triggerPoofEffect(p.position);
   }, [spawnCounter, spawnTarget]);
 
-  // Contextual Interaction Handler (KeyE)
+  // Contextual Interaction Handler (KeyE / Gamepad X)
   const handleContextualAction = () => {
     const p = mutablePhysics;
     const currentMode = useGameStore.getState().mode;
@@ -204,7 +205,7 @@ export const ArcadeController: React.FC = () => {
       return;
     }
 
-    // 2. Step 4.2: Check proximity to Lakeside Campfire
+    // 2. Check proximity to Lakeside Campfire
     const distToFire = Math.hypot(
       p.position.x - CAMPFIRE_WORLD_POS.x,
       p.position.z - CAMPFIRE_WORLD_POS.z
@@ -241,6 +242,15 @@ export const ArcadeController: React.FC = () => {
         useGameStore.getState().setMode(nextMode, true);
         return;
       }
+    }
+
+    // 5. Manual Triathlon Race Start at Summit Start Arch (Z = -715) or Summit Zone (Z < -695)
+    const distToStartGate = Math.hypot(p.position.x - -12, p.position.z - -715);
+    if (p.triathlonStatus !== 'ACTIVE' && (distToStartGate < 14.0 || p.position.z < -695)) {
+      useGameStore.getState().startTriathlon(currentMode);
+      soundscape.triggerDiscoveryChime();
+      triggerPoofEffect(p.position);
+      return;
     }
   };
 
@@ -527,6 +537,12 @@ export const ArcadeController: React.FC = () => {
           break;
         }
       }
+      if (!promptText && p.triathlonStatus !== 'ACTIVE') {
+        const distStart = Math.hypot(p.position.x - -12, p.position.z - -715);
+        if (distStart < 14.0 || p.position.z < -695) {
+          promptText = '🏁 [E / X] Lancer la Course Chrono (1,600m Downhill)';
+        }
+      }
     }
     p.contextPrompt = promptText;
 
@@ -653,38 +669,48 @@ export const ArcadeController: React.FC = () => {
         sp.driftCharge = Math.max(0, sp.driftCharge - dt * 2.5);
       }
 
-      // 4. Slope Gravity Projection (Uses smoothed normal so terrain cells never cause speed jitter!)
+      // 4. Slope Gravity Projection ("Lonely Mountains" Weighty Downhill vs Uphill Pullback!)
       _slopeDown.set(_smoothGroundNormal.x, 0, _smoothGroundNormal.z);
       const slopeStrength = _slopeDown.length();
       p.slopeAngle = Math.asin(THREE.MathUtils.clamp(slopeStrength, 0, 1)) * (180 / Math.PI);
+      const downhillDot = _slopeDown.dot(_forward); // > 0 when descending, < 0 when climbing uphill
 
       const isAeroAttackTuck =
         (mode === 'LONGBOARD' || mode === 'BIKE') &&
         accelInput > 0.2 &&
+        downhillDot > -0.02 &&
         forwardVel > 9.5 &&
         !p.isDrifting;
 
-      const isDownhillRiverCanoe = isOnWater && mode === 'CANOE' && p.position.z < 245;
+      const isDownhillRiverCanoe = isOnWater && mode === 'CANOE' && p.position.z < 480;
       if (p.isGrounded && (!isOnWater || isDownhillRiverCanoe) && !onTowerDeck && mode !== 'WALK') {
-        const downhillDot = _slopeDown.dot(_forward);
-        const tuckGravityBoost = isAeroAttackTuck && downhillDot > 0 ? 1.28 : 1.0;
-        const gravityAccel = 22.0 * preset.gravityScale * tuckGravityBoost;
-        forwardVel += downhillDot * gravityAccel * dt;
-        lateralVel += _slopeDown.dot(_right) * gravityAccel * 0.42 * dt;
+        if (downhillDot >= 0) {
+          // Downhill gravity acceleration: rewards steep lines & Aero Tuck
+          const tuckGravityBoost = isAeroAttackTuck ? 1.32 : 1.0;
+          const gravityAccel = 24.5 * preset.gravityScale * tuckGravityBoost;
+          forwardVel += downhillDot * gravityAccel * dt;
+        } else {
+          // Strong uphill gravity resistance: prevents flying uphill at 70 km/h!
+          const uphillPullback = 54.0 * preset.gravityScale;
+          forwardVel += downhillDot * uphillPullback * dt;
+        }
+        lateralVel += _slopeDown.dot(_right) * 20.0 * preset.gravityScale * 0.42 * dt;
       }
 
-      // 5. Mode-Specific Authentic Propulsion (WP 3.5)
+      // 5. Mode-Specific Authentic Propulsion ("Lonely Mountains: Downhill" Feel)
       if (mode === 'LONGBOARD') {
-        // Authentic Rhythmic Foot-Pushing below 13.5 m/s (~48 km/h); above that, rely on gravity, Aero Tuck & Carve Pumping!
+        // Uphill limits foot-pushing ceiling; flat caps at 13.5 m/s (~32 km/h); downhill unleashes gravity!
+        const pushCap = downhillDot < -0.04 ? Math.max(5.5, 11.5 + downhillDot * 32.0) : 13.5;
         if (
           accelInput > 0.15 &&
           p.isGrounded &&
           !p.isDrifting &&
-          forwardVel < 13.5 &&
+          forwardVel < pushCap &&
           sp.pushTimer <= 0
         ) {
-          const pushKick = 3.5 * accelInput * (p.surface === 'ASPHALT' ? 1.0 : 0.55);
-          forwardVel = Math.min(14.2, forwardVel + pushKick);
+          const uphillPenalty = downhillDot < 0 ? Math.max(0.35, 1.0 + downhillDot * 2.5) : 1.0;
+          const pushKick = 3.5 * accelInput * uphillPenalty * (p.surface === 'ASPHALT' ? 1.0 : 0.55);
+          forwardVel = Math.min(pushCap + 0.8, forwardVel + pushKick);
           sp.pushTimer = 0.54;
           sp.pushAnimTimer = 0.38;
           soundscape.triggerFootPushSound();
@@ -693,30 +719,58 @@ export const ArcadeController: React.FC = () => {
 
         const steerDelta = Math.abs(steerInput - sp.prevSteer);
         p.isPumping = p.isGrounded && !p.isDrifting && Math.abs(steerInput) > 0.12 && forwardVel > 3.0;
-        if (steerDelta > 0.18 && p.isGrounded && forwardVel > 2.5 && forwardVel < preset.maxSpeed) {
-          forwardVel += (p.surface === 'ASPHALT' ? 0.65 : 0.25) * steerDelta;
+        if (
+          steerDelta > 0.18 &&
+          p.isGrounded &&
+          downhillDot > -0.02 &&
+          forwardVel > 2.5 &&
+          forwardVel < preset.maxSpeed
+        ) {
+          forwardVel += (p.surface === 'ASPHALT' ? 0.68 : 0.25) * steerDelta;
         }
         if (wantsHop && !p.isDrifting && p.isGrounded && sp.hopCooldown <= 0) {
           p.velocity.y = preset.hopImpulse;
           p.isGrounded = false;
           sp.hopCooldown = 0.45;
-          sp.bounceVel = 3.2;
+          sp.bounceVel = 3.0;
           soundscape.triggerHopSound();
           triggerHaptic(pad, 80, 0.4, 0.3);
         }
       } else if (mode === 'BIKE') {
-        p.isPumping = false;
-        // Unbridled VTT Pedaling + Downhill Freeride Torque up to 31 m/s (~75 km/h), gravity carries to 38 m/s (~91 km/h)!
-        if (accelInput > 0 && forwardVel < 31.0) {
-          const pedalEfficiency = THREE.MathUtils.clamp(1.22 - forwardVel / 34.0, 0.34, 1.0);
+        // Lonely Mountains VTT Torque:
+        // - Uphill: low-gear granny climb tops out at 18-24 km/h (7.5-10 m/s)
+        // - Flat: brisk sprint tops out at ~37 km/h (15.5 m/s)
+        // - Downhill: pedaling + gravity + berm pumping pushes up to 75-91 km/h (31-38 m/s)!
+        const slopeBonus =
+          downhillDot > 0
+            ? THREE.MathUtils.clamp(downhillDot * 68.0, 0, 16.5)
+            : Math.max(-8.5, downhillDot * 42.0);
+        const maxPedalSpeed = Math.max(7.2, 15.2 + slopeBonus);
+
+        if (accelInput > 0 && forwardVel < maxPedalSpeed) {
+          const climbResist = downhillDot < -0.03 ? Math.max(0.38, 1.0 + downhillDot * 2.2) : 1.0;
+          const pedalEfficiency =
+            THREE.MathUtils.clamp(1.18 - forwardVel / (maxPedalSpeed + 4.0), 0.32, 1.0) * climbResist;
           forwardVel += preset.accelForce * pedalEfficiency * accelInput * dt;
+        } else if (downhillDot < -0.06 && forwardVel > maxPedalSpeed + 1.5) {
+          // Rapidly bleed excess high-speed momentum when hitting a steep uphill wall!
+          forwardVel = THREE.MathUtils.damp(forwardVel, maxPedalSpeed, 3.2, dt);
         }
+
+        // Lonely Mountains Corner / Berm Pumping on VTT: carving through S-turns generates exit snap!
+        const steerDelta = Math.abs(steerInput - sp.prevSteer);
+        p.isPumping =
+          p.isGrounded && !p.isDrifting && Math.abs(steerInput) > 0.22 && downhillDot > 0.02 && forwardVel > 8.0;
+        if (steerDelta > 0.16 && p.isGrounded && downhillDot > 0.01 && forwardVel > 6.0 && forwardVel < preset.maxSpeed) {
+          forwardVel += 0.52 * steerDelta;
+        }
+
         sp.pedalPhase += Math.max(0, forwardVel) * dt * 0.85;
         if (wantsHop && p.isGrounded && sp.hopCooldown <= 0) {
           p.velocity.y = preset.hopImpulse;
           p.isGrounded = false;
           sp.hopCooldown = 0.45;
-          sp.bounceVel = 4.2;
+          sp.bounceVel = 3.6;
           soundscape.triggerHopSound();
           triggerHaptic(pad, 90, 0.55, 0.35);
         }
@@ -843,9 +897,9 @@ export const ArcadeController: React.FC = () => {
       p.speed = Math.hypot(p.velocity.x, p.velocity.z);
       p.lateralSpeed = lateralVel;
 
-      // 7. Vertical Integration, Kicker Launch & Ground Snapping
+      // 7. Vertical Integration, Controlled Kicker Launch & Ground Downforce (No more flying into orbit!)
       const wasGroundedBeforeStep = p.isGrounded;
-      p.velocity.y -= 28.5 * dt;
+      p.velocity.y -= 35.5 * dt;
       p.position.x += p.velocity.x * dt;
       p.position.y += p.velocity.y * dt;
       p.position.z += p.velocity.z * dt;
@@ -905,33 +959,46 @@ export const ArcadeController: React.FC = () => {
         targetFloorY = TOWER_BASE_Y + TOWER_DECK_HEIGHT + 0.22;
       }
 
-      // Slope / Kicker Crest Launch Physics (on Dirt Singletrack kickers):
-      // If climbing a jump kicker at speed and cresting the lip (vertical ground rate drops sharply), launch airborne!
+      // Controlled Tabletop Kicker Launch Physics (ONLY at dedicated KICKER_Z_CENTERS lips!):
+      // Prevents random slope breaks from launching the bike into orbit at 80 km/h!
       const currentClimbVel = (targetFloorY - sp.prevGroundY) / Math.max(0.001, dt);
+      let nearKickerLip = false;
+      for (let k = 0; k < KICKER_Z_CENTERS.length; k++) {
+        if (Math.abs(p.position.z - KICKER_Z_CENTERS[k]) < 5.5) {
+          nearKickerLip = true;
+          break;
+        }
+      }
+
       const isCrestingDirtKicker =
+        nearKickerLip &&
         wasGroundedBeforeStep &&
         !newOnWater &&
         p.surface === 'DIRT' &&
         (mode === 'BIKE' || mode === 'LONGBOARD') &&
-        p.speed > 10.5 &&
-        sp.prevClimbVel > 2.8 &&
-        currentClimbVel < sp.prevClimbVel - 2.5;
+        p.speed > 12.0 &&
+        sp.prevClimbVel > 1.8 &&
+        currentClimbVel < sp.prevClimbVel - 1.6;
 
       if (isCrestingDirtKicker) {
-        p.velocity.y = Math.min(6.4, Math.max(3.6, sp.prevClimbVel * 0.82));
-        p.position.y = targetFloorY + 0.08;
+        // Controlled, low-slung flow jump (2.6 to 4.1 m/s vertical pop instead of 6.4+ rocket launch!)
+        p.velocity.y = Math.min(4.1, Math.max(2.6, sp.prevClimbVel * 0.52));
+        p.position.y = targetFloorY + 0.06;
         p.isGrounded = false;
-        sp.bounceVel = 2.6;
+        sp.bounceVel = 2.1;
         soundscape.triggerHopSound();
-        triggerHaptic(pad, 100, 0.5, 0.4);
+        triggerHaptic(pad, 90, 0.45, 0.35);
       } else if (
         p.position.y <= targetFloorY ||
-        (wasGroundedBeforeStep && p.velocity.y <= 0.05 && p.position.y - targetFloorY < 0.85)
+        (wasGroundedBeforeStep &&
+          sp.hopCooldown <= 0.15 &&
+          p.velocity.y <= 0.1 &&
+          p.position.y - targetFloorY < 1.65)
       ) {
-        // Stick smoothly to downhill slopes without micro-bouncing into the air!
-        if (!wasGroundedBeforeStep && p.velocity.y < -5.5) {
-          sp.bounceVel = p.velocity.y * 0.22;
-          triggerHaptic(pad, 120, Math.min(1, Math.abs(p.velocity.y) / 14), 0.45);
+        // Active Downforce: hug steep downhill transitions without flying off the mountain!
+        if (!wasGroundedBeforeStep && p.velocity.y < -6.0) {
+          sp.bounceVel = Math.max(-3.5, p.velocity.y * 0.18);
+          triggerHaptic(pad, 110, Math.min(1, Math.abs(p.velocity.y) / 16), 0.45);
         }
         p.position.y = targetFloorY;
         p.velocity.y = 0;
@@ -961,7 +1028,7 @@ export const ArcadeController: React.FC = () => {
       }
 
       const effectiveNormal =
-        p.specialState !== 'NONE' || (p.waterDepth > 0.2 && mode === 'CANOE' && p.position.z >= 245)
+        p.specialState !== 'NONE' || (p.waterDepth > 0.2 && mode === 'CANOE' && p.position.z >= 475)
           ? _upVec
           : _smoothGroundNormal;
 

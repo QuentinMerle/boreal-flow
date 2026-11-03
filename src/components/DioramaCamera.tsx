@@ -101,64 +101,73 @@ export const DioramaCamera: React.FC = () => {
     }
     const contemplationFactor = Math.min(1.0, Math.max(0, (stillTimer.current - 1.0) / 1.5));
 
-    // Target FOV per mode & state (Dynamic speed-reactive FOV for exhilarating downhill flow!)
-    const speedRatio = THREE.MathUtils.clamp(speed / 32, 0, 1);
-    let targetFov = THREE.MathUtils.lerp(45, 58, speedRatio);
+    // Target FOV per mode & state (Strong speed-reactive FOV for visceral downhill speed sensation!)
+    const speedRatio = THREE.MathUtils.clamp(speed / 31, 0, 1);
+    const highSpeedSurge = Math.pow(speedRatio, 1.25);
+    let targetFov = THREE.MathUtils.lerp(44, 75, highSpeedSurge);
     if (p.cameraMode === 'COCKPIT') {
-      targetFov = THREE.MathUtils.lerp(56, 66, speedRatio);
+      targetFov = THREE.MathUtils.lerp(52, 82, highSpeedSurge);
     } else if (p.specialState === 'CAMPFIRE') {
       targetFov = 32;
     } else if (p.specialState === 'ZIPLINE') {
-      targetFov = 54;
+      targetFov = 64;
     } else if (contemplationFactor > 0.05) {
-      targetFov = THREE.MathUtils.lerp(45, 38, contemplationFactor);
+      targetFov = THREE.MathUtils.lerp(44, 38, contemplationFactor);
     }
 
     if (Math.abs(cam.fov - targetFov) > 0.05) {
-      cam.fov = THREE.MathUtils.damp(cam.fov, targetFov, 5.0, dt);
+      cam.fov = THREE.MathUtils.damp(cam.fov, targetFov, 6.0, dt);
       cam.updateProjectionMatrix();
     }
 
-    // --- 1. COCKPIT / HANDLEBAR FIRST-PERSON MODE (Toggled via Key V or Gamepad R3) ---
+    // High-speed tactile micro-vibration (stronger on rough dirt/rock than smooth asphalt)
+    const tNow = state.clock.elapsedTime;
+    const surfaceRough =
+      !p.isGrounded || p.specialState !== 'NONE'
+        ? 0.2
+        : p.surface === 'ROCK'
+          ? 1.35
+          : p.surface === 'DIRT'
+            ? 1.0
+            : p.surface === 'ASPHALT'
+              ? 0.42
+              : 1.15;
+    const shakeAmp =
+      THREE.MathUtils.smoothstep(speed, 13.0, 34.0) * 0.095 * surfaceRough;
+    const shakeX = Math.sin(tNow * 37.0) * shakeAmp;
+    const shakeY = Math.cos(tNow * 49.0) * shakeAmp * 0.85;
+
+    // --- 1. "SKATE / ACTION" CLOSE THIRD-PERSON MODE (Toggled via Key V or Gamepad R3) ---
     if (p.cameraMode === 'COCKPIT' && p.specialState === 'NONE') {
-      let fwdOffset = 0.75;
-      let upOffset = 1.15;
+      // Low, tight follow camera right behind the character (Skate 3 / Lonely Mountains action feel!)
+      const skateBackDist = THREE.MathUtils.lerp(3.8, 4.6, speedRatio);
+      const skateHeight = THREE.MathUtils.lerp(1.48, 1.22, speedRatio);
+      // Slight dynamic shoulder/board offset that shifts with carving
+      const rightX = fwd.z;
+      const rightZ = -fwd.x;
+      const shoulderOffset = 0.36 - vel.x * 0.03;
 
-      if (mode === 'BIKE') {
-        fwdOffset = 0.65;
-        upOffset = 1.18;
-      } else if (mode === 'LONGBOARD') {
-        fwdOffset = 0.82;
-        upOffset = 0.58;
-      } else if (mode === 'CANOE') {
-        fwdOffset = 1.62;
-        upOffset = 0.65;
-      } else {
-        // WALK
-        fwdOffset = 0.18;
-        upOffset = 1.55;
-      }
+      const rawX = pos.x - fwd.x * skateBackDist + rightX * shoulderOffset;
+      const rawZ = pos.z - fwd.z * skateBackDist + rightZ * shoulderOffset;
+      const groundUnder = getTerrainHeightOnly(rawX, rawZ);
+      const safeY = Math.max(pos.y + skateHeight, groundUnder + 0.85);
 
-      _desiredPos.set(
-        pos.x + fwd.x * fwdOffset,
-        pos.y + upOffset,
-        pos.z + fwd.z * fwdOffset
-      );
+      _desiredPos.set(rawX, safeY, rawZ);
       _desiredLookAt.set(
-        pos.x + fwd.x * 26.0,
-        pos.y + upOffset * 0.85 - 0.2,
-        pos.z + fwd.z * 26.0
+        pos.x + fwd.x * 16.0 + vel.x * 0.22,
+        pos.y + 0.92 - speedRatio * 0.55,
+        pos.z + fwd.z * 16.0 + vel.z * 0.22
       );
 
-      _smoothPos.x = THREE.MathUtils.damp(_smoothPos.x, _desiredPos.x, 14.0, dt);
-      _smoothPos.y = THREE.MathUtils.damp(_smoothPos.y, _desiredPos.y, 14.0, dt);
-      _smoothPos.z = THREE.MathUtils.damp(_smoothPos.z, _desiredPos.z, 14.0, dt);
+      _smoothPos.x = THREE.MathUtils.damp(_smoothPos.x, _desiredPos.x, 12.5, dt);
+      _smoothPos.y = THREE.MathUtils.damp(_smoothPos.y, _desiredPos.y, 11.0, dt);
+      _smoothPos.z = THREE.MathUtils.damp(_smoothPos.z, _desiredPos.z, 12.5, dt);
 
-      _smoothLookAt.x = THREE.MathUtils.damp(_smoothLookAt.x, _desiredLookAt.x, 16.0, dt);
+      _smoothLookAt.x = THREE.MathUtils.damp(_smoothLookAt.x, _desiredLookAt.x, 15.0, dt);
       _smoothLookAt.y = THREE.MathUtils.damp(_smoothLookAt.y, _desiredLookAt.y, 12.0, dt);
-      _smoothLookAt.z = THREE.MathUtils.damp(_smoothLookAt.z, _desiredLookAt.z, 16.0, dt);
+      _smoothLookAt.z = THREE.MathUtils.damp(_smoothLookAt.z, _desiredLookAt.z, 15.0, dt);
 
-      cam.position.copy(_smoothPos);
+      cam.position.set(_smoothPos.x + shakeX, _smoothPos.y + shakeY, _smoothPos.z);
       cam.lookAt(_smoothLookAt);
       return;
     }
@@ -178,9 +187,9 @@ export const DioramaCamera: React.FC = () => {
       );
     } else {
       // --- DYNAMIC LOW-SLUNG CHASE / CINEMA DIORAMA CAMERA ---
-      // Lower height + closer follow distance frames the horizon, mountain drop & distant smoke plume!
-      const baseHeight = THREE.MathUtils.lerp(4.8, 6.8, speedRatio);
-      const baseBackDist = THREE.MathUtils.lerp(10.5, 14.2, speedRatio);
+    // Lower camera closer to the ground at high speeds so terrain rushes past faster
+    const baseHeight = THREE.MathUtils.lerp(4.8, 3.6, highSpeedSurge);
+    const baseBackDist = THREE.MathUtils.lerp(10.2, 8.4, highSpeedSurge);
 
       // Stationary contemplation pulls camera even lower to gaze up at the pine canopy & vista
       const camHeight = THREE.MathUtils.lerp(baseHeight, 3.2, contemplationFactor);
@@ -232,7 +241,7 @@ export const DioramaCamera: React.FC = () => {
     _smoothLookAt.y = THREE.MathUtils.damp(_smoothLookAt.y, _desiredLookAt.y, 6.8, dt);
     _smoothLookAt.z = THREE.MathUtils.damp(_smoothLookAt.z, _desiredLookAt.z, 8.5, dt);
 
-    cam.position.copy(_smoothPos);
+    cam.position.set(_smoothPos.x + shakeX, _smoothPos.y + shakeY, _smoothPos.z);
     cam.lookAt(_smoothLookAt);
   });
 

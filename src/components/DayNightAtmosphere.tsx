@@ -234,11 +234,11 @@ export const DayNightAtmosphere: React.FC = () => {
     });
   }, []);
 
-  // 2 Concentric Rings of Distant Firewatch Mountain Silhouettes (anchored at 480m so zero gap behind Mirror Lake!)
+  // 2 Concentric Rings of Distant Firewatch Mountain Silhouettes (anchored at 780m so zero gap behind 1,600m Mirror Lake!)
   const { innerRangeGeo, outerRangeGeo } = useMemo(() => {
     return {
-      innerRangeGeo: createDistantMountainRingGeometry(480, 740, 128, 175, 1.2, true),
-      outerRangeGeo: createDistantMountainRingGeometry(680, 960, 144, 265, 4.7, false),
+      innerRangeGeo: createDistantMountainRingGeometry(780, 1080, 128, 210, 1.2, true),
+      outerRangeGeo: createDistantMountainRingGeometry(980, 1340, 144, 310, 4.7, false),
     };
   }, []);
 

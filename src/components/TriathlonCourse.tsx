@@ -26,14 +26,14 @@ export const TriathlonCourse: React.FC = () => {
   const smokeMeshRef = useRef<THREE.InstancedMesh>(null);
   const smokeMatRef = useRef<THREE.MeshStandardMaterial>(null);
 
-  // Summit Start Marker Coordinates
-  const startX = -13;
-  const startZ = -420;
+  // Summit Start Marker Coordinates (1,600m Map)
+  const startX = -12;
+  const startZ = -715;
   const summitY = getTerrainHeightOnly(startX, startZ);
 
-  // Lakeside Finish Gate Coordinates
+  // Lakeside Finish Gate Coordinates (1,600m Map)
   const finishX = -15.0;
-  const finishZ = 230.0;
+  const finishZ = 460.0;
   const finishY = getTerrainHeightOnly(finishX, finishZ);
 
   // Pre-calculate randomized smoke offsets
@@ -101,16 +101,8 @@ export const TriathlonCourse: React.FC = () => {
       }
     }
 
-    // --- 2. BOREAL TRIATHLON LOGIC & RUN STATE MACHINE (1,000m Course) ---
-    if (p.triathlonStatus === 'IDLE') {
-      const crossedStartLine = p.position.z >= -425 && p.position.z <= -385;
-      const isMovingDownhill = p.velocity.z > 1.2 || (p.speed > 2.0 && p.forward.z > 0.4);
-
-      if (crossedStartLine && isMovingDownhill && p.specialState === 'NONE') {
-        useGameStore.getState().startTriathlon(mode);
-        soundscape.triggerDiscoveryChime();
-      }
-    } else if (p.triathlonStatus === 'ACTIVE') {
+    // --- 2. BOREAL TRIATHLON LOGIC & RUN STATE MACHINE (1,600m Course - Manual Start via [E] / (X)) ---
+    if (p.triathlonStatus === 'ACTIVE') {
       p.triathlonTimer += dt;
 
       // Track multi-sport chaining
@@ -120,18 +112,18 @@ export const TriathlonCourse: React.FC = () => {
 
       // Finish Trigger: Player enters Lakeside Camp or Canoe Dock perimeter
       const distToFire = Math.hypot(p.position.x - CAMPFIRE_WORLD_POS.x, p.position.z - CAMPFIRE_WORLD_POS.z);
-      const distToDock = Math.hypot(p.position.x - 2, p.position.z - 252);
+      const distToDock = Math.hypot(p.position.x - 2, p.position.z - 482);
       const distToFinishGate = Math.hypot(p.position.x - finishX, p.position.z - finishZ);
 
-      const reachedLakeside = distToFire < 15.0 || distToDock < 14.0 || distToFinishGate < 9.5;
+      const reachedLakeside = distToFire < 15.0 || distToDock < 14.0 || distToFinishGate < 10.5;
 
-      if (reachedLakeside && p.position.z > 218) {
+      if (reachedLakeside && p.position.z > 445) {
         const finalTime = p.triathlonTimer;
         let badge: BadgeType = 'MOOSE';
-        if (finalTime <= 72.0) {
-          badge = 'MAPLE'; // Gold tier (<= 1m12s on 1,000m course)
-        } else if (finalTime <= 105.0) {
-          badge = 'JAY'; // Silver tier (<= 1m45s)
+        if (finalTime <= 95.0) {
+          badge = 'MAPLE'; // Gold tier (<= 1m35s on 1,600m course)
+        } else if (finalTime <= 135.0) {
+          badge = 'JAY'; // Silver tier (<= 2m15s)
         }
 
         useGameStore.getState().finishTriathlon(finalTime, badge);

@@ -1,5 +1,6 @@
 import React, { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
+import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   TERRAIN_WIDTH,
@@ -28,6 +29,7 @@ const PALETTE = {
   ROCK_LIGHT: new THREE.Color('#7a8288'),
   ROCK_DARK: new THREE.Color('#555d66'),
   ROCK_STRATA: new THREE.Color('#444c54'),
+  RAMPAGE_OCHRE: new THREE.Color('#a45638'),
   ALPINE_SNOW: new THREE.Color('#e8eff5'),
   SAND: new THREE.Color('#d2b48c'),
   LAKE_BED: new THREE.Color('#1c434d'),
@@ -252,11 +254,81 @@ function createDashedCenterLineGeometry(
 }
 
 export const TerrainChunk: React.FC = () => {
-  const tentFabricMatRef = useRef<THREE.MeshStandardMaterial>(null);
   const campLightRef = useRef<THREE.PointLight>(null);
-  const fireEmberMatRef = useRef<THREE.MeshStandardMaterial>(null);
+  const { scene: campsiteGltfScene } = useGLTF('/models/campsite.glb');
 
-  // 1. Build smooth indexed, vertex-colored 1,000m terrain geometry (zero jagged triangle facets)
+  const campsiteScene = useMemo(() => {
+    const cloned = campsiteGltfScene.clone(true);
+    cloned.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    return cloned;
+  }, [campsiteGltfScene]);
+
+  // Procedural GLSL Dancing Campfire Flame Shader Material
+  const campfireFlameMaterial = useMemo(() => {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: windUniforms.uTime,
+      },
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      vertexShader: `
+        uniform float uTime;
+        varying vec2 vUv;
+        varying float vHeight;
+        void main() {
+          vUv = uv;
+          // Cone geometry height normalized 0 (base) to 1 (tip)
+          float h = clamp((position.y + 0.55) / 1.1, 0.0, 1.0);
+          vHeight = h;
+          vec3 pos = position;
+          // Multi-frequency dancing flame sway & pinch toward tip
+          float waveX = sin(uTime * 8.5 + h * 5.2 + position.z * 4.0) * 0.16 * h
+                      + cos(uTime * 14.2 - h * 7.5) * 0.07 * h * h;
+          float waveZ = cos(uTime * 7.8 + h * 4.8 + position.x * 4.0) * 0.16 * h
+                      + sin(uTime * 13.1 + h * 6.8) * 0.07 * h * h;
+          float stretchY = 1.0 + sin(uTime * 11.0 + position.x * 3.0) * 0.14 * h;
+          pos.x += waveX;
+          pos.z += waveZ;
+          pos.y *= stretchY;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        varying vec2 vUv;
+        varying float vHeight;
+        void main() {
+          // Animated rising flame noise tongues
+          float angle = vUv.x * 6.28318;
+          float n1 = sin(angle * 3.0 + vHeight * 7.0 - uTime * 10.5);
+          float n2 = cos(angle * 5.0 - vHeight * 11.0 + uTime * 14.0);
+          float flameNoise = (n1 * 0.6 + n2 * 0.4) * 0.5 + 0.5;
+
+          // Eroded flame tip mask
+          float cutoff = vHeight * 0.88 + (1.0 - flameNoise) * 0.38;
+          if (cutoff > 0.96) discard;
+
+          // Hot white-yellow core -> golden amber -> fiery orange -> crimson tip
+          vec3 cCore = vec3(1.0, 0.97, 0.78);
+          vec3 cMid  = vec3(1.0, 0.68, 0.12);
+          vec3 cEdge = vec3(0.96, 0.24, 0.04);
+          vec3 col = mix(cCore, cMid, smoothstep(0.0, 0.48, cutoff));
+          col = mix(col, cEdge, smoothstep(0.45, 0.92, cutoff));
+
+          float alpha = (1.0 - smoothstep(0.68, 0.96, cutoff)) * 0.94;
+          gl_FragColor = vec4(col, alpha);
+        }
+      `,
+    });
+  }, []);
+
+  // 1. Build smooth indexed, vertex-colored 1,600m terrain geometry (zero jagged triangle facets)
   const terrainGeometry = useMemo(() => {
     const baseGeo = new THREE.PlaneGeometry(
       TERRAIN_WIDTH,
@@ -294,35 +366,41 @@ export const TerrainChunk: React.FC = () => {
       const sCode = surfaceGrid[iz * cols + ix];
       const jitter = simplex2D(cx * 0.05, cz * 0.05) * 0.025;
 
-      // Base meadow grass color with smooth altitude gradient up to 210m alpine summit
-      const altBlend = THREE.MathUtils.clamp((cy - 25) / 110, 0, 1);
+      // Base meadow grass color with smooth altitude gradient
+      const altBlend = THREE.MathUtils.clamp((cy - 25) / 145, 0, 1);
       tmpColor.copy(PALETTE.GRASS_MID).lerp(PALETTE.GRASS_WARM, altBlend);
 
       if (cy < WATER_LEVEL - 0.15) {
         const depthBlend = THREE.MathUtils.clamp((WATER_LEVEL - 0.15 - cy) / 1.8, 0, 1);
         tmpColor.lerp(PALETTE.LAKE_BED, depthBlend);
-      } else if (sCode === 4 || (cy < WATER_LEVEL + 1.8 && cz > 205)) {
+      } else if (sCode === 4 || (cy < WATER_LEVEL + 1.8 && cz > 435)) {
         const sandBlend = THREE.MathUtils.clamp(1.0 - (cy - WATER_LEVEL) / 1.8, 0, 1);
         tmpColor.lerp(PALETTE.SAND, Math.max(sCode === 4 ? 0.75 : 0, sandBlend));
-      } else if (ny < 0.82 || sCode === 3) {
-        const rockBlend = THREE.MathUtils.clamp((0.82 - ny) / 0.22, 0, 1);
-        const strata = Math.sin(cy * 0.65 + simplex2D(cx * 0.03, cz * 0.03) * 2.2);
+      } else if (ny < 0.84 || sCode === 3) {
+        const rockBlend = THREE.MathUtils.clamp((0.84 - ny) / 0.22, 0, 1);
+        const strata = Math.sin(cy * 0.55 + simplex2D(cx * 0.03, cz * 0.03) * 2.2);
+        const isRampageZone = THREE.MathUtils.smoothstep(cy, 175, 240);
         const rockCol =
-          strata > 0.55
-            ? PALETTE.ROCK_STRATA
+          strata > 0.48
+            ? isRampageZone > 0.3
+              ? PALETTE.RAMPAGE_OCHRE
+              : PALETTE.ROCK_STRATA
             : ny < 0.65
               ? PALETTE.ROCK_DARK
               : PALETTE.ROCK_LIGHT;
-        tmpColor.lerp(rockCol, Math.max(sCode === 3 ? 0.85 : 0, rockBlend));
+        tmpColor.lerp(rockCol, Math.max(sCode === 3 ? 0.88 : 0, rockBlend));
+        if (isRampageZone > 0.1 && ny < 0.88) {
+          tmpColor.lerp(PALETTE.RAMPAGE_OCHRE, isRampageZone * 0.42);
+        }
       }
 
-      // High-altitude Canadian Rockies sub-alpine & snow-dusted summit ridge (> 150m)
-      if (cy > 148) {
-        const alpineRockT = THREE.MathUtils.smoothstep(cy, 148, 178);
-        tmpColor.lerp(PALETTE.ROCK_LIGHT, alpineRockT * 0.55);
-        if (cy > 172 && ny > 0.72) {
-          const snowT = THREE.MathUtils.smoothstep(cy + jitter * 180, 172, 202);
-          tmpColor.lerp(PALETTE.ALPINE_SNOW, snowT * 0.82);
+      // High-altitude Red Bull Rampage & Canadian Rockies summit ridge (> 215m)
+      if (cy > 215) {
+        const alpineRockT = THREE.MathUtils.smoothstep(cy, 215, 265);
+        tmpColor.lerp(PALETTE.ROCK_LIGHT, alpineRockT * 0.52);
+        if (cy > 268 && ny > 0.76) {
+          const snowT = THREE.MathUtils.smoothstep(cy + jitter * 180, 268, 315);
+          tmpColor.lerp(PALETTE.ALPINE_SNOW, snowT * 0.78);
         }
       }
 
@@ -343,21 +421,21 @@ export const TerrainChunk: React.FC = () => {
     return baseGeo;
   }, []);
 
-  // 2. Smooth Ribbon Geometries for 1,000m Road, Dashed Yellow Center Lines, Dirt Singletrack & Downhill Whitewater River!
+  // 2. Smooth Ribbon Geometries for 1,600m Road, Dashed Yellow Center Lines, Dirt Singletrack & Downhill Whitewater River!
   const { roadRibbonGeo, roadStripeGeo, dirtRibbonGeo, dirtMaterial, riverRibbonGeo } = useMemo(() => {
     const roadRibbon = createSplineRibbonGeometry(
       asphaltCurve,
-      640,
+      860,
       5.2,
       0.14,
       '#24272c',
       '#4e535c',
       false
     );
-    const roadStripe = createDashedCenterLineGeometry(asphaltCurve, 155, 0.14, 0.22);
+    const roadStripe = createDashedCenterLineGeometry(asphaltCurve, 240, 0.14, 0.22);
     const dirtRibbon = createSplineRibbonGeometry(
       dirtCurve,
-      680,
+      900,
       3.15,
       0.12,
       '#8f5336',
@@ -478,7 +556,7 @@ export const TerrainChunk: React.FC = () => {
     // Downhill Whitewater Rapids Ribbon (glacial turquoise center with frothy whitewater foam edges)
     const riverRibbon = createSplineRibbonGeometry(
       riverCurve,
-      480,
+      620,
       6.4,
       0.32,
       '#2c95a8',
@@ -494,11 +572,11 @@ export const TerrainChunk: React.FC = () => {
     };
   }, []);
 
-  // 3. Water Surface Geometry with Vertex-Colored Shoreline Foam (Mirror Lake Basin at Bottom)
+  // 3. Water Surface Geometry with Vertex-Colored Shoreline Foam (Mirror Lake Basin at Bottom of 1,600m Map)
   const { waterGeometry, waterMaterial } = useMemo(() => {
-    const waterLen = 280; // Spans from Z = +220 to Z = +500 (center at Z = +360)
-    const centerZ = 360;
-    const geo = new THREE.PlaneGeometry(TERRAIN_WIDTH, waterLen, 110, 90);
+    const waterLen = 350; // Spans from Z = +450 to Z = +800 (center at Z = +625)
+    const centerZ = 625;
+    const geo = new THREE.PlaneGeometry(TERRAIN_WIDTH, waterLen, 120, 100);
     geo.rotateX(-Math.PI / 2);
 
     const pos = geo.attributes.position;
@@ -551,7 +629,7 @@ export const TerrainChunk: React.FC = () => {
           `
           #include <begin_vertex>
           vWaterWorldPos = position;
-          float isRiver = smoothstep(255.0, 215.0, position.z);
+          float isRiver = smoothstep(485.0, 445.0, position.z);
           float flowPhase = position.z * 0.42 - uTime * mix(2.2, 8.5, isRiver);
           float wave1 = sin(flowPhase + position.x * 0.35) * mix(0.04, 0.09, isRiver);
           float wave2 = cos(position.z * 0.85 - uTime * mix(3.1, 11.0, isRiver) - position.x * 0.62) * mix(0.025, 0.055, isRiver);
@@ -566,7 +644,7 @@ export const TerrainChunk: React.FC = () => {
             '#include <color_fragment>',
             `
             #include <color_fragment>
-            float isRiverFrag = smoothstep(255.0, 215.0, vWaterWorldPos.z);
+            float isRiverFrag = smoothstep(485.0, 445.0, vWaterWorldPos.z);
             // Smooth longitudinal current ribbons (stretched along Z, zero polka dots!)
             float warpX = vWaterWorldPos.x + sin(vWaterWorldPos.z * 0.08 - uTime * 1.4) * 1.2;
             float ribbon1 = sin(warpX * 1.6 + vWaterWorldPos.z * 0.11 - uTime * mix(0.8, 3.8, isRiverFrag));
@@ -580,7 +658,7 @@ export const TerrainChunk: React.FC = () => {
             '#include <normal_fragment_maps>',
             `
             #include <normal_fragment_maps>
-            float isRiverNorm = smoothstep(255.0, 215.0, vWaterWorldPos.z);
+            float isRiverNorm = smoothstep(485.0, 445.0, vWaterWorldPos.z);
             float nFlow = vWaterWorldPos.z * 0.35 - uTime * mix(1.6, 6.5, isRiverNorm);
             float nxRipple = cos(vWaterWorldPos.x * 1.2 + nFlow) * 0.12 + sin(vWaterWorldPos.x * 2.1 - nFlow * 0.8) * 0.06;
             float nzRipple = sin(vWaterWorldPos.z * 0.9 + nFlow) * 0.12 + cos(vWaterWorldPos.x * 1.4 + nFlow * 0.7) * 0.06;
@@ -592,9 +670,10 @@ export const TerrainChunk: React.FC = () => {
     return { waterGeometry: geo, waterMaterial: mat };
   }, []);
 
-  // 4. Instanced Foliage for 1,000m Map (Spruces, Golden Autumn Larches, Mossy Rocks, Understory Shrubs & Grass)
-  const { spruceMatrices, larchMatrices, rockMatrices, shrubMatrices, grassMatrices } = useMemo(() => {
+  // 4. Instanced Foliage for 1,600m Map (Dense Boreal Spruces with 5 Green Shades, Larches, Boulders, Shrubs & Grass)
+  const { spruceMatrices, spruceShades, larchMatrices, rockMatrices, shrubMatrices, grassMatrices } = useMemo(() => {
     const spruces: THREE.Matrix4[] = [];
+    const shades: number[] = [];
     const larches: THREE.Matrix4[] = [];
     const rocks: THREE.Matrix4[] = [];
     const shrubs: THREE.Matrix4[] = [];
@@ -612,6 +691,7 @@ export const TerrainChunk: React.FC = () => {
         larches.push(dummy.matrix.clone());
       } else {
         spruces.push(dummy.matrix.clone());
+        shades.push(t.colorShade);
       }
     }
 
@@ -625,7 +705,7 @@ export const TerrainChunk: React.FC = () => {
     }
 
     // Understory Low Shrubs / Berry Bushes
-    for (let i = 0; i < 650; i++) {
+    for (let i = 0; i < 950; i++) {
       const rx = ((Math.sin(i * 157.3 + 13) * 43758.5453) % 1 + 1) % 1;
       const rz = ((Math.sin(i * 311.7 + 71) * 43758.5453) % 1 + 1) % 1;
       const x = (rx - 0.5) * (TERRAIN_WIDTH - 30);
@@ -636,7 +716,7 @@ export const TerrainChunk: React.FC = () => {
       const sCode = surfaceGrid[gz * cols + gx];
       const y = getTerrainHeightOnly(x, z);
 
-      if (sCode === 0 && y > WATER_LEVEL + 1.2 && y < 162) {
+      if (sCode === 0 && y > WATER_LEVEL + 1.2 && y < 215) {
         const s = 0.65 + ((i * 17) % 9) * 0.09;
         dummy.position.set(x, y + s * 0.32, z);
         dummy.rotation.set(0, (i * 1.7) % (Math.PI * 2), 0);
@@ -646,7 +726,7 @@ export const TerrainChunk: React.FC = () => {
       }
     }
 
-    for (let i = 0; i < 2800; i++) {
+    for (let i = 0; i < 3800; i++) {
       const rx = ((Math.sin(i * 91.7 + 41) * 43758.5453) % 1 + 1) % 1;
       const rz = ((Math.sin(i * 241.3 + 19) * 43758.5453) % 1 + 1) % 1;
       const x = (rx - 0.5) * (TERRAIN_WIDTH - 28);
@@ -657,7 +737,7 @@ export const TerrainChunk: React.FC = () => {
       const sCode = surfaceGrid[gz * cols + gx];
       const y = getTerrainHeightOnly(x, z);
 
-      if (sCode === 0 && y > WATER_LEVEL + 0.8 && y < 168) {
+      if (sCode === 0 && y > WATER_LEVEL + 0.8 && y < 220) {
         const s = 0.45 + ((i * 11) % 7) * 0.08;
         dummy.position.set(x, y + s * 0.4, z);
         dummy.rotation.set(0, (i * 2.1) % (Math.PI * 2), 0);
@@ -669,6 +749,7 @@ export const TerrainChunk: React.FC = () => {
 
     return {
       spruceMatrices: spruces,
+      spruceShades: shades,
       larchMatrices: larches,
       rockMatrices: rocks,
       shrubMatrices: shrubs,
@@ -681,22 +762,15 @@ export const TerrainChunk: React.FC = () => {
     windUniforms.uTime.value = t;
 
     const night = mutablePhysics.nightFactor;
-    if (tentFabricMatRef.current) {
-      tentFabricMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(0.05, 1.35, night);
-    }
-    if (fireEmberMatRef.current) {
-      const flicker = 0.85 + Math.sin(t * 14) * 0.15 + Math.cos(t * 23) * 0.1;
-      fireEmberMatRef.current.emissiveIntensity = (0.4 + night * 1.8) * flicker;
-    }
     if (campLightRef.current) {
-      const flicker = 0.9 + Math.sin(t * 11) * 0.12;
-      campLightRef.current.intensity = THREE.MathUtils.lerp(0.2, 6.5, night) * flicker;
+      const flicker = 0.92 + Math.sin(t * 13) * 0.1 + Math.cos(t * 21) * 0.06;
+      campLightRef.current.intensity = THREE.MathUtils.lerp(1.4, 8.5, night) * flicker;
     }
   });
 
   const dockY = WATER_LEVEL + 0.25;
   const campX = -10;
-  const campZ = 240;
+  const campZ = 470;
   const campY = getTerrainHeightOnly(campX, campZ);
 
   return (
@@ -758,15 +832,15 @@ export const TerrainChunk: React.FC = () => {
         </group>
       ))}
 
-      {/* Downhill Whitewater Rapids River Ribbon (Flows down the slope from Z=-280 into Mirror Lake!) */}
+      {/* Downhill Whitewater Rapids River Ribbon (Flows down the slope from Z=-320 into Mirror Lake!) */}
       <mesh geometry={riverRibbonGeo} material={waterMaterial} receiveShadow />
 
       {/* Mirror Lake Plane with Shoreline Foam */}
       <mesh geometry={waterGeometry} material={waterMaterial} receiveShadow />
 
-      {/* High-Mountain Whitewater Rapids Wooden Put-In Deck (at x=48, z=-272) */}
+      {/* High-Mountain Whitewater Rapids Wooden Put-In Deck (at x=48, z=-312) */}
       <group
-        position={[48, getTerrainHeightOnly(48, -272) + 0.12, -272]}
+        position={[48, getTerrainHeightOnly(48, -312) + 0.12, -312]}
         rotation={[0, 0.32, 0]}
       >
         <mesh castShadow receiveShadow position={[0, 0.15, 0]}>
@@ -775,8 +849,8 @@ export const TerrainChunk: React.FC = () => {
         </mesh>
       </group>
 
-      {/* Wooden Lake Dock at the bottom of the 1,000m slope */}
-      <group position={[2, dockY, 256]}>
+      {/* Wooden Lake Dock at the bottom of the 1,600m slope */}
+      <group position={[2, dockY, 486]}>
         <mesh castShadow receiveShadow position={[0, 0.15, 0]}>
           <boxGeometry args={[4.2, 0.3, 18]} />
           <meshStandardMaterial color="#8c6239" flatShading roughness={0.88} />
@@ -795,47 +869,33 @@ export const TerrainChunk: React.FC = () => {
         ))}
       </group>
 
-      {/* Lakeside Base Camp (Emissive Expedition Tent & Warm Campfire at Night) */}
+      {/* Lakeside Base Camp (Blender Expedition Tent + Stone Fire Pit + GLSL Dancing Campfire Shader!) */}
       <group position={[campX, campY, campZ]} rotation={[0, 0.45, 0]}>
-        <mesh castShadow receiveShadow position={[0, 1.15, 0]} rotation={[0, Math.PI / 4, 0]}>
-          <coneGeometry args={[2.3, 2.4, 4]} />
-          <meshStandardMaterial
-            ref={tentFabricMatRef}
-            color="#e76f51"
-            emissive="#ff9f1c"
-            emissiveIntensity={0.1}
-            flatShading
-            roughness={0.85}
-          />
-        </mesh>
-        <group position={[2.8, 0.12, 1.8]}>
-          <mesh castShadow position={[0, 0.18, 0]}>
-            <dodecahedronGeometry args={[0.48, 0]} />
-            <meshStandardMaterial
-              ref={fireEmberMatRef}
-              color="#ff5400"
-              emissive="#ff6d00"
-              emissiveIntensity={0.8}
-              flatShading
-            />
+        <primitive object={campsiteScene} />
+
+        {/* Procedural GLSL Campfire Flames & PointLight over the Stone Fire Pit (at [2.8, 0.0, 1.8]) */}
+        <group position={[2.8, 0.15, 1.8]}>
+          {/* Outer Dancing Flame Cone */}
+          <mesh position={[0, 0.52, 0]} material={campfireFlameMaterial}>
+            <coneGeometry args={[0.46, 1.15, 14, 10, true]} />
           </mesh>
-          <mesh castShadow receiveShadow position={[1.3, 0.18, -0.4]} rotation={[Math.PI / 2, 0, 0.3]}>
-            <cylinderGeometry args={[0.22, 0.22, 2.1, 6]} />
-            <meshStandardMaterial color="#6c462b" flatShading roughness={0.9} />
+          {/* Inner Hot Flame Tongue (rotated 45 deg for 3D volumetric fullness) */}
+          <mesh position={[0, 0.44, 0]} rotation={[0, 0.78, 0]} material={campfireFlameMaterial}>
+            <coneGeometry args={[0.32, 0.92, 12, 8, true]} />
           </mesh>
           <pointLight
             ref={campLightRef}
-            position={[0, 1.4, 0]}
+            position={[0, 1.45, 0]}
             color="#ff9e44"
-            intensity={1.0}
-            distance={24}
-            decay={1.6}
+            intensity={1.8}
+            distance={28}
+            decay={1.5}
           />
         </group>
       </group>
 
-      {/* Instanced Boreal Spruces, Golden Autumn Larches, Boulders, Shrubs & Grass with GPU Wind Sway */}
-      <InstancedPines matrices={spruceMatrices} />
+      {/* Instanced Boreal Spruces (with 5 Boreal Green Shades), Larches, Boulders, Shrubs & Grass */}
+      <InstancedPines matrices={spruceMatrices} shades={spruceShades} />
       <InstancedLarches matrices={larchMatrices} />
       <InstancedRocks matrices={rockMatrices} />
       <InstancedShrubs matrices={shrubMatrices} />
@@ -844,7 +904,21 @@ export const TerrainChunk: React.FC = () => {
   );
 };
 
-const InstancedPines: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) => {
+// 5 Distinct Boreal Forest Green Palettes (Blue-Spruce, Emerald Pine, Warm Moss, Lichen Fir, Sunlit Olive)
+const SPRUCE_LOWER_SHADES = ['#1b3b30', '#1f4934', '#2b522c', '#234c3e', '#385c30'].map(
+  (h) => new THREE.Color(h)
+);
+const SPRUCE_MID_SHADES = ['#244c3f', '#2a5f45', '#396839', '#2f6150', '#48733d'].map(
+  (h) => new THREE.Color(h)
+);
+const SPRUCE_TOP_SHADES = ['#2e5e4e', '#367455', '#498047', '#3c7763', '#5a8c4b'].map(
+  (h) => new THREE.Color(h)
+);
+
+const InstancedPines: React.FC<{ matrices: THREE.Matrix4[]; shades: number[] }> = ({
+  matrices,
+  shades,
+}) => {
   const trunkRef = useRef<THREE.InstancedMesh>(null);
   const lowerTierRef = useRef<THREE.InstancedMesh>(null);
   const midTierRef = useRef<THREE.InstancedMesh>(null);
@@ -852,7 +926,7 @@ const InstancedPines: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
 
   const pineLowerMat = useMemo(() => {
     const mat = new THREE.MeshStandardMaterial({
-      color: '#224436',
+      color: '#ffffff',
       flatShading: true,
       roughness: 0.9,
     });
@@ -862,7 +936,7 @@ const InstancedPines: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
 
   const pineMidMat = useMemo(() => {
     const mat = new THREE.MeshStandardMaterial({
-      color: '#2c5543',
+      color: '#ffffff',
       flatShading: true,
       roughness: 0.89,
     });
@@ -872,7 +946,7 @@ const InstancedPines: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
 
   const pineTopMaterial = useMemo(() => {
     const mat = new THREE.MeshStandardMaterial({
-      color: '#376752',
+      color: '#ffffff',
       flatShading: true,
       roughness: 0.88,
     });
@@ -890,23 +964,32 @@ const InstancedPines: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
     const offsetUpper = new THREE.Matrix4().makeTranslation(0, 6.0, 0);
 
     for (let i = 0; i < matrices.length; i++) {
+      const shadeIdx = (shades[i] ?? 0) % 5;
       trunkRef.current.setMatrixAt(i, matrices[i]);
       matLower.multiplyMatrices(matrices[i], offsetLower);
       lowerTierRef.current.setMatrixAt(i, matLower);
+      lowerTierRef.current.setColorAt(i, SPRUCE_LOWER_SHADES[shadeIdx]);
+
       matMid.multiplyMatrices(matrices[i], offsetMid);
       midTierRef.current.setMatrixAt(i, matMid);
+      midTierRef.current.setColorAt(i, SPRUCE_MID_SHADES[shadeIdx]);
+
       matUpper.multiplyMatrices(matrices[i], offsetUpper);
       upperTierRef.current.setMatrixAt(i, matUpper);
+      upperTierRef.current.setColorAt(i, SPRUCE_TOP_SHADES[shadeIdx]);
     }
     trunkRef.current.instanceMatrix.needsUpdate = true;
     lowerTierRef.current.instanceMatrix.needsUpdate = true;
     midTierRef.current.instanceMatrix.needsUpdate = true;
     upperTierRef.current.instanceMatrix.needsUpdate = true;
+    if (lowerTierRef.current.instanceColor) lowerTierRef.current.instanceColor.needsUpdate = true;
+    if (midTierRef.current.instanceColor) midTierRef.current.instanceColor.needsUpdate = true;
+    if (upperTierRef.current.instanceColor) upperTierRef.current.instanceColor.needsUpdate = true;
     trunkRef.current.computeBoundingSphere();
     lowerTierRef.current.computeBoundingSphere();
     midTierRef.current.computeBoundingSphere();
     upperTierRef.current.computeBoundingSphere();
-  }, [matrices]);
+  }, [matrices, shades]);
 
   return (
     <group>
@@ -1076,7 +1159,7 @@ const InstancedGrass: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
 
   const grassMaterial = useMemo(() => {
     const mat = new THREE.MeshStandardMaterial({
-      color: '#5a8f5c',
+      color: '#ffffff',
       flatShading: true,
       roughness: 0.9,
     });
@@ -1086,10 +1169,15 @@ const InstancedGrass: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
 
   React.useLayoutEffect(() => {
     if (!meshRef.current) return;
+    const col = new THREE.Color();
+    const shades = ['#487d49', '#5a8f5c', '#6a994e', '#3d6e47'];
     for (let i = 0; i < matrices.length; i++) {
       meshRef.current.setMatrixAt(i, matrices[i]);
+      col.set(shades[i % 4]);
+      meshRef.current.setColorAt(i, col);
     }
     meshRef.current.instanceMatrix.needsUpdate = true;
+    if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
     meshRef.current.computeBoundingSphere();
   }, [matrices]);
 
@@ -1099,3 +1187,5 @@ const InstancedGrass: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
     </instancedMesh>
   );
 };
+
+useGLTF.preload('/models/campsite.glb');

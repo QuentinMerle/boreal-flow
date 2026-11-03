@@ -73,12 +73,12 @@ export const HudOverlay: React.FC = () => {
         telemetryWrapRef.current.style.opacity = `${activeAlpha}`;
       }
       if (speedLinesDomRef.current) {
-        // Subtle peripheral flow-state speed lines starting around 36 km/h (p.speed > 14.5 m/s)
-        const speedNorm = p.isPaused ? 0 : Math.max(0, Math.min(1, (p.speed - 14.5) / 18.0));
+        // Visceral peripheral flow-state speed lines starting around 30 km/h (p.speed > 12.0 m/s)
+        const speedNorm = p.isPaused ? 0 : Math.max(0, Math.min(1, (p.speed - 12.0) / 18.0));
         if (speedNorm > 0.01) {
-          const flutter = 0.96 + 0.04 * Math.sin(performance.now() * 0.028);
-          speedLinesDomRef.current.style.opacity = `${(speedNorm * 0.52).toFixed(3)}`;
-          speedLinesDomRef.current.style.transform = `scale(${(1.06 - speedNorm * 0.06 * flutter).toFixed(3)})`;
+          const flutter = 0.94 + 0.06 * Math.sin(performance.now() * 0.042);
+          speedLinesDomRef.current.style.opacity = `${(Math.pow(speedNorm, 0.85) * 0.88).toFixed(3)}`;
+          speedLinesDomRef.current.style.transform = `scale(${(1.08 - speedNorm * 0.11 * flutter).toFixed(3)})`;
         } else {
           speedLinesDomRef.current.style.opacity = '0';
         }

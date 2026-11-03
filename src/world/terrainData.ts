@@ -2,51 +2,56 @@ import * as THREE from 'three';
 import { fbm2D, simplex2D } from '../math/noise';
 import { SurfaceType } from '../state/gameStore';
 
-// Session 2 Upgrade: 1,000m Boreal Canyon Sandbox (400m x 1,000m)
-export const TERRAIN_WIDTH = 400; // X: -200 to +200
-export const TERRAIN_LENGTH = 1000; // Z: -500 to +500
-export const GRID_SEGMENTS_X = 220; // ~1.81m per cell (smooth indexed mesh)
-export const GRID_SEGMENTS_Z = 480; // ~2.08m per cell
+// Session 3 Upgrade: 1,600m "Red Bull Rampage -> Boreal Forest -> Mirror Lake" Megamap
+export const TERRAIN_WIDTH = 440; // X: -220 to +220
+export const TERRAIN_LENGTH = 1600; // Z: -800 to +800
+export const GRID_SEGMENTS_X = 230; // ~1.91m per cell
+export const GRID_SEGMENTS_Z = 720; // ~2.22m per cell
 export const WATER_LEVEL = 0.0;
 
-// 1. Scenic Asphalt Road Spline (Sweeping S-curves & hairpins from Z=-460 summit to Z=+252 lake camp)
+// 1. Scenic Asphalt Road Spline (Sweeping S-curves & hairpins from Z=-762 summit to Z=+480 lake camp)
 export const ASPHALT_SPLINE_POINTS = [
-  new THREE.Vector3(-10, 0, -462),
-  new THREE.Vector3(-13, 0, -420),
-  new THREE.Vector3(-64, 0, -340),
-  new THREE.Vector3(42, 0, -250),
-  new THREE.Vector3(-72, 0, -150),
-  new THREE.Vector3(38, 0, -50),
-  new THREE.Vector3(-62, 0, 50),
-  new THREE.Vector3(24, 0, 140),
-  new THREE.Vector3(-30, 0, 205),
-  new THREE.Vector3(-15, 0, 250),
+  new THREE.Vector3(-10, 0, -762),
+  new THREE.Vector3(-12, 0, -715),
+  new THREE.Vector3(-68, 0, -610),
+  new THREE.Vector3(48, 0, -495),
+  new THREE.Vector3(-76, 0, -370),
+  new THREE.Vector3(52, 0, -245),
+  new THREE.Vector3(-72, 0, -115),
+  new THREE.Vector3(44, 0, 15),
+  new THREE.Vector3(-66, 0, 145),
+  new THREE.Vector3(36, 0, 270),
+  new THREE.Vector3(-42, 0, 385),
+  new THREE.Vector3(-15, 0, 480),
 ];
 
-// 2. Dirt Singletrack VTT Trail Spline (Cuts across road hairpins through forest with natural jump kickers)
+// 2. Dirt Singletrack VTT Trail Spline (Upper "Red Bull Rampage" ridge line + mid-forest berms & kickers)
 export const DIRT_SPLINE_POINTS = [
-  new THREE.Vector3(16, 0, -462),
-  new THREE.Vector3(36, 0, -405),
-  new THREE.Vector3(68, 0, -320),
-  new THREE.Vector3(-22, 0, -235),
-  new THREE.Vector3(-48, 0, -160),
-  new THREE.Vector3(18, 0, -85),
-  new THREE.Vector3(54, 0, -10),
-  new THREE.Vector3(-18, 0, 75),
-  new THREE.Vector3(36, 0, 165),
-  new THREE.Vector3(14, 0, 245),
+  new THREE.Vector3(16, 0, -762),
+  new THREE.Vector3(38, 0, -700),
+  new THREE.Vector3(78, 0, -595),
+  new THREE.Vector3(-18, 0, -480),
+  new THREE.Vector3(64, 0, -365),
+  new THREE.Vector3(-44, 0, -250),
+  new THREE.Vector3(24, 0, -140),
+  new THREE.Vector3(-56, 0, -25),
+  new THREE.Vector3(48, 0, 95),
+  new THREE.Vector3(-28, 0, 215),
+  new THREE.Vector3(42, 0, 340),
+  new THREE.Vector3(14, 0, 475),
 ];
 
-// 3. Downhill Whitewater Kayak/Canoe River Spline (Starts high at Z=-280, Y=120m and rushes down to Mirror Lake at Z=+255)
+// 3. Downhill Whitewater Kayak/Canoe River Spline (Starts at Z=-320 canyon headwaters and rushes to Mirror Lake at Z=+485)
 export const RIVER_SPLINE_POINTS = [
-  new THREE.Vector3(54, 0, -280),
-  new THREE.Vector3(78, 0, -195),
-  new THREE.Vector3(52, 0, -105),
-  new THREE.Vector3(82, 0, -15),
-  new THREE.Vector3(56, 0, 75),
-  new THREE.Vector3(74, 0, 165),
-  new THREE.Vector3(24, 0, 252),
-  new THREE.Vector3(4, 0, 325),
+  new THREE.Vector3(54, 0, -320),
+  new THREE.Vector3(84, 0, -210),
+  new THREE.Vector3(52, 0, -95),
+  new THREE.Vector3(86, 0, 20),
+  new THREE.Vector3(56, 0, 140),
+  new THREE.Vector3(82, 0, 260),
+  new THREE.Vector3(48, 0, 375),
+  new THREE.Vector3(24, 0, 482),
+  new THREE.Vector3(4, 0, 565),
 ];
 
 export const asphaltCurve = new THREE.CatmullRomCurve3(ASPHALT_SPLINE_POINTS, false, 'catmullrom', 0.5);
@@ -62,72 +67,85 @@ interface SampledSplinePoint {
   tz: number;
 }
 
-const SAMPLE_COUNT = 900;
+const SAMPLE_COUNT = 1200;
 const asphaltSamples: SampledSplinePoint[] = [];
 const dirtSamples: SampledSplinePoint[] = [];
 const riverSamples: SampledSplinePoint[] = [];
 
-// Pure C-2 analytical jump kickers along the VTT Singletrack (evaluated directly at world Z, zero discrete steps!)
-const KICKER_Z_CENTERS = [-290, -135, 25, 165];
+// Pure C-2 analytical tabletop jump kickers along the VTT Singletrack (controlled 0.62m height so jumps feel grounded & flow-y!)
+export const KICKER_Z_CENTERS = [-615, -435, -210, 15, 235, 385];
 
 function evaluateAnalyticalDirtKicker(z: number): number {
   let boost = 0;
   for (let i = 0; i < KICKER_Z_CENTERS.length; i++) {
     const kz = KICKER_Z_CENTERS[i];
     const dz = z - kz;
-    // Smooth 22m approach ramp (-18m to +4m) with a 0.95m crest
-    if (dz > -18.0 && dz <= 0.0) {
-      const u = (dz + 18.0) / 18.0; // 0 to 1
+    // Smooth 24m approach tabletop (-19m to +6m) with a controlled 0.62m lip
+    if (dz > -19.0 && dz <= 0.0) {
+      const u = (dz + 19.0) / 19.0;
       const s = u * u * (3 - 2 * u);
-      boost += s * 0.95;
-    } else if (dz > 0.0 && dz < 7.5) {
-      const u = 1.0 - dz / 7.5;
+      boost += s * 0.62;
+    } else if (dz > 0.0 && dz < 8.5) {
+      const u = 1.0 - dz / 8.5;
       const s = u * u * (3 - 2 * u);
-      boost += s * 0.95;
+      boost += s * 0.62;
     }
   }
   return boost;
 }
 
 /**
- * Pure C-infinity analytical mountain slope elevation at any Z coordinate.
- * Using this directly at (z) eliminates all discrete spline-sample staircase bumps on the road!
+ * Pure C-infinity analytical mountain slope elevation at any Z coordinate (1,600m map).
+ * Drops 335m from the steep "Red Bull Rampage" summit (Z=-765) down to Mirror Lake (Z=+480).
  */
 export function computeSmoothSlopeElevation(z: number): number {
-  const slopeT = THREE.MathUtils.clamp((z + 465) / 715, 0, 1.35);
+  const slopeT = THREE.MathUtils.clamp((z + 765) / 1245, 0, 1.35);
   if (slopeT <= 1.0) {
     const smooth = 1.0 - slopeT;
-    return 210.0 * Math.pow(smooth, 1.38);
+    // Steeper upper Rampage headwall (power 1.52) transitioning into fast flowing mid-mountain valley
+    return 335.0 * Math.pow(smooth, 1.52);
   } else {
-    const waterT = THREE.MathUtils.clamp((z - 250) / 180, 0, 1);
-    return -7.5 * Math.sin(waterT * Math.PI * 0.5);
+    const waterT = THREE.MathUtils.clamp((z - 480) / 245, 0, 1);
+    return -8.0 * Math.sin(waterT * Math.PI * 0.5);
   }
 }
 
-// Base mountain profile before spline carving (1,000m canyon from Z=-500 to Z=+500)
+// Base mountain profile before spline carving (1,600m canyon from Z=-800 to Z=+800)
 function computeRawMountainElevation(x: number, z: number): number {
-  const slopeT = THREE.MathUtils.clamp((z + 465) / 715, 0, 1.35);
+  const slopeT = THREE.MathUtils.clamp((z + 765) / 1245, 0, 1.35);
   const baseHeight = computeSmoothSlopeElevation(z);
 
   // Dramatic Canadian canyon walls on far left/right flanks
-  const edgeDist = Math.max(0, Math.abs(x) - 88);
+  const edgeDist = Math.max(0, Math.abs(x) - 92);
   const canyonWall =
-    Math.pow(edgeDist / 48, 1.85) * 28.0 * THREE.MathUtils.clamp(1.2 - slopeT * 0.82, 0.25, 1.0);
+    Math.pow(edgeDist / 46, 1.88) * 34.0 * THREE.MathUtils.clamp(1.3 - slopeT * 0.85, 0.25, 1.15);
+
+  // "Red Bull Rampage" Upper Summit Zone (Z = -800 to -310):
+  // Rugged sharp rock spines, terraced sandstone/granite cliff ribs & dramatic couloirs!
+  const rampageZone = 1.0 - THREE.MathUtils.smoothstep(z, -680, -260);
+  const ridgeSharp = 1.0 - Math.abs(simplex2D(x * 0.019 + 3.1, z * 0.014 - 2.4));
+  const rampageSpines = Math.pow(ridgeSharp, 2.6) * 26.0 * rampageZone;
+  const rockTerrace = Math.sin(baseHeight * 0.22 + simplex2D(x * 0.025, z * 0.025) * 1.8) * 3.8 * rampageZone;
 
   // Multi-octave Simplex noise for natural rocky ridges and undulations
-  const macroNoise = fbm2D(x * 0.009, z * 0.009, 4, 2.0, 0.5) * 11.5;
-  const ridgeNoise = Math.abs(simplex2D(x * 0.022 + 10, z * 0.022 - 5)) * 4.8;
+  const macroNoise = fbm2D(x * 0.009, z * 0.009, 4, 2.0, 0.5) * (12.0 + rampageZone * 9.0);
+  const ridgeNoise = Math.abs(simplex2D(x * 0.022 + 10, z * 0.022 - 5)) * (5.0 + rampageZone * 5.5);
 
-  // Fade out rough terrain noise near the flat shore & lake basin
-  const noiseMask = THREE.MathUtils.smoothstep(265 - z, 0, 95);
+  // Fade out rough terrain noise near the flat shore & lake basin (Z > 480)
+  const noiseMask = THREE.MathUtils.smoothstep(495 - z, 0, 95);
 
-  // Curved southern shoreline & wooded ridge enclosing Mirror Lake inside an oval alpine basin (no straight map-edge cut at Z=+500!)
-  const southArchZ = 432 - (x * x) * 0.0022 + simplex2D(x * 0.014, 7.3) * 16.0;
-  const southShoreT = THREE.MathUtils.smoothstep(z, southArchZ - 28, 496);
-  const southRidgeNoise = Math.abs(simplex2D(x * 0.018 + 4.2, z * 0.018)) * 14.0;
-  const southShoreRise = Math.pow(southShoreT, 1.45) * (34.0 + southRidgeNoise);
+  // Curved southern shoreline & wooded ridge enclosing Mirror Lake inside an oval alpine basin (Z = 725..796)
+  const southArchZ = 725 - (x * x) * 0.002 + simplex2D(x * 0.014, 7.3) * 18.0;
+  const southShoreT = THREE.MathUtils.smoothstep(z, southArchZ - 32, 794);
+  const southRidgeNoise = Math.abs(simplex2D(x * 0.018 + 4.2, z * 0.018)) * 15.0;
+  const southShoreRise = Math.pow(southShoreT, 1.45) * (36.0 + southRidgeNoise);
 
-  return baseHeight + canyonWall + southShoreRise + (macroNoise + ridgeNoise) * noiseMask;
+  return (
+    baseHeight +
+    canyonWall +
+    southShoreRise +
+    (macroNoise + ridgeNoise + rampageSpines + rockTerrace) * noiseMask
+  );
 }
 
 // Pre-sample all 3 splines for fast 2D distance queries
@@ -213,16 +231,16 @@ function evaluatePoint(x: number, z: number): {
   let rawH = computeRawMountainElevation(x, z);
   const smoothSlopeH = Math.max(0, computeSmoothSlopeElevation(z));
 
-  const roadHit = findClosestSplineSample(asphaltSamples, x, z, 40);
-  const dirtHit = findClosestSplineSample(dirtSamples, x, z, 34);
-  const riverHit = findClosestSplineSample(riverSamples, x, z, 42);
+  const roadHit = findClosestSplineSample(asphaltSamples, x, z, 48);
+  const dirtHit = findClosestSplineSample(dirtSamples, x, z, 42);
+  const riverHit = findClosestSplineSample(riverSamples, x, z, 48);
 
   const roadDist = Math.sqrt(roadHit.distSq);
   const dirtDist = Math.sqrt(dirtHit.distSq);
   const riverDist = Math.sqrt(riverHit.distSq);
 
-  // Carve the Downhill Mountain Whitewater River Channel (from Z = -282 down to Mirror Lake at Z = +252)
-  const inRiverZone = z > -282 && z < 260 && riverDist < 22.0;
+  // Carve the Downhill Mountain Whitewater River Channel (from Z = -322 down to Mirror Lake at Z = +485)
+  const inRiverZone = z > -322 && z < 492 && riverDist < 22.0;
   if (inRiverZone) {
     const canyonBlend = 1.0 - THREE.MathUtils.smoothstep(riverDist, 7.5, 22.0);
     // River bed follows the downhill mountain slope (-1.35m trough in center, +1.8m rocky banks)
@@ -247,16 +265,20 @@ function evaluatePoint(x: number, z: number): {
 
   // Determine dominant surface code
   let surfaceCode = 0; // GRASS
-  if (rawH < WATER_LEVEL + 0.15 || (z > -278 && z < 255 && riverDist < 5.8)) {
+  if (rawH < WATER_LEVEL + 0.15 || (z > -318 && z < 486 && riverDist < 5.8)) {
     surfaceCode = 5; // WATER (Lake OR Downhill Mountain River Rapids!)
-  } else if (roadDist < 4.6 && z < 252) {
+  } else if (roadDist < 4.6 && z < 482) {
     surfaceCode = 1; // ASPHALT
-  } else if (dirtDist < 2.75 && z < 250) {
+  } else if (dirtDist < 2.75 && z < 478) {
     surfaceCode = 2; // DIRT
-  } else if ((rawH < WATER_LEVEL + 1.85 && z > 210) || (z > -278 && z < 255 && riverDist < 9.2)) {
+  } else if ((rawH < WATER_LEVEL + 1.85 && z > 440) || (z > -318 && z < 486 && riverDist < 9.2)) {
     surfaceCode = 4; // SAND / SHORE / RIVER BANK
-  } else if (rawH > 135 || Math.abs(x) > 95 || (riverDist >= 9.2 && riverDist < 17.5 && z > -275 && z < 220)) {
-    surfaceCode = 3; // ROCK / CANYON WALLS
+  } else if (
+    rawH > 195 ||
+    Math.abs(x) > 102 ||
+    (riverDist >= 9.2 && riverDist < 17.5 && z > -315 && z < 450)
+  ) {
+    surfaceCode = 3; // ROCK / RAMPAGE SUMMIT CLIFFS & CANYON WALLS
   }
 
   return {
@@ -326,8 +348,8 @@ function buildFallenLogs(): FallenLogObstacle[] {
   const pt = new THREE.Vector3();
   const tan = new THREE.Vector3();
 
-  // 3 Fallen Logs across the Asphalt Road
-  const roadLogT = [0.22, 0.53, 0.81];
+  // 4 Fallen Logs across the 1,600m Asphalt Road
+  const roadLogT = [0.21, 0.44, 0.67, 0.85];
   roadLogT.forEach((t, idx) => {
     asphaltCurve.getPoint(t, pt);
     asphaltCurve.getTangent(t, tan);
@@ -343,8 +365,8 @@ function buildFallenLogs(): FallenLogObstacle[] {
     });
   });
 
-  // 3 Fallen Logs across the Dirt Singletrack
-  const dirtLogT = [0.18, 0.41, 0.65];
+  // 4 Fallen Logs across the 1,600m Dirt Singletrack
+  const dirtLogT = [0.19, 0.39, 0.61, 0.79];
   dirtLogT.forEach((t, idx) => {
     dirtCurve.getPoint(t, pt);
     dirtCurve.getTangent(t, tan);
@@ -376,7 +398,7 @@ export function getRiverCurrentVector(x: number, z: number, outVec: THREE.Vector
   for (let i = 0; i < riverSamples.length; i += 2) {
     const s = riverSamples[i];
     const dz = s.z - z;
-    if (Math.abs(dz) > 35) continue;
+    if (Math.abs(dz) > 42) continue;
     const dx = s.x - x;
     const dSq = dx * dx + dz * dz;
     if (dSq < minDistSq) {
@@ -386,9 +408,9 @@ export function getRiverCurrentVector(x: number, z: number, outVec: THREE.Vector
     }
   }
 
-  if (minDistSq < 400 && z < 265) {
-    // Fast downhill whitewater rapids current (up to 6.8 m/s along river tangent)
-    const strength = THREE.MathUtils.lerp(6.8, 1.8, THREE.MathUtils.clamp((z + 280) / 535, 0, 1));
+  if (minDistSq < 400 && z < 495) {
+    // Fast downhill whitewater rapids current (up to 7.2 m/s along river tangent)
+    const strength = THREE.MathUtils.lerp(7.2, 1.8, THREE.MathUtils.clamp((z + 320) / 805, 0, 1));
     outVec.set(bestTx * strength, 0, bestTz * strength);
   } else {
     // Gentle lake breeze drift
@@ -452,7 +474,7 @@ export function sampleTerrain(x: number, z: number, outNormal: THREE.Vector3): T
   const nearZ = fz < 0.5 ? iz : iz + 1;
   const sCode = surfaceGrid[nearZ * COLS + nearX] ?? 0;
 
-  // In the Downhill Whitewater River (sCode === 5 at z < 252), waterDepth is 1.2m so Canoe/Kayak glides down the slope!
+  // In the Downhill Whitewater River (sCode === 5 at z < 485), waterDepth is 1.2m so Canoe/Kayak glides down the slope!
   const lakeDepth = Math.max(0, WATER_LEVEL - height);
   const waterDepth = sCode === 5 ? Math.max(1.2, lakeDepth) : lakeDepth;
 
@@ -476,6 +498,7 @@ export interface TreeObstacle {
   rotY: number;
   radius: number;
   variant: 'SPRUCE' | 'LARCH';
+  colorShade: number; // 0..4 for rich Boreal green variation
 }
 
 export interface RockObstacle {
@@ -524,50 +547,62 @@ function getBucketIndex(x: number, z: number): number {
 }
 
 function initForestAndRockObstacles() {
-  // 1. Deterministic Boreal Pines (up to sub-alpine tree line at Y = 172m)
-  for (let i = 0; i < 1450; i++) {
+  // 1. Deterministic Boreal Pines & Dense Forest Clusters (up to tree line at Y = 228m)
+  for (let i = 0; i < 3100; i++) {
     const rx = ((Math.sin(i * 127.1) * 43758.5453) % 1 + 1) % 1;
     const rz = ((Math.sin(i * 311.7) * 43758.5453) % 1 + 1) % 1;
     const x = (rx - 0.5) * (TERRAIN_WIDTH - 24);
-    const z = (rz - 0.5) * (TERRAIN_LENGTH - 30);
+    const z = (rz - 0.5) * (TERRAIN_LENGTH - 36);
 
-    // Clear Lakeside Camp & Summit Firewatch Tower zones
-    if (Math.hypot(x - -10, z - 240) < 14) continue;
-    if (Math.hypot(x - 0, z - -475) < 17) continue;
+    // Clear Lakeside Camp (Z=+470) & Summit Firewatch Tower (Z=-775) zones
+    if (Math.hypot(x - -10, z - 470) < 15) continue;
+    if (Math.hypot(x - 0, z - -775) < 18) continue;
+
+    // Organic Forest Cluster Density: creates deep, dense woodland groves alternating with open glades!
+    const clusterVal = fbm2D(x * 0.012 + 4.5, z * 0.012 - 8.2, 3, 2.0, 0.5);
+    const keepProb = THREE.MathUtils.clamp(0.58 + clusterVal * 0.85, 0.14, 0.98);
+    const roll = ((Math.sin(i * 743.9 + 19) * 43758.5453) % 1 + 1) % 1;
+    if (roll > keepProb) continue;
 
     const gx = Math.round((x / TERRAIN_WIDTH + 0.5) * GRID_SEGMENTS_X);
     const gz = Math.round((z / TERRAIN_LENGTH + 0.5) * GRID_SEGMENTS_Z);
     const sCode = surfaceGrid[gz * COLS + gx];
     const y = getTerrainHeightOnly(x, z);
 
-    if (sCode === 0 && y > WATER_LEVEL + 1.5 && y < 172) {
+    if (sCode === 0 && y > WATER_LEVEL + 1.5 && y < 228) {
       // Strictly keep trees clear of road, singletrack & river corridors
-      if (findClosestSplineSample(asphaltSamples, x, z, 25).distSq < 6.8 * 6.8) continue;
-      if (findClosestSplineSample(dirtSamples, x, z, 25).distSq < 4.5 * 4.5) continue;
-      if (findClosestSplineSample(riverSamples, x, z, 25).distSq < 7.8 * 7.8) continue;
+      if (findClosestSplineSample(asphaltSamples, x, z, 32).distSq < 6.8 * 6.8) continue;
+      if (findClosestSplineSample(dirtSamples, x, z, 32).distSq < 4.5 * 4.5) continue;
+      if (findClosestSplineSample(riverSamples, x, z, 32).distSq < 7.8 * 7.8) continue;
 
-      const scale = 0.85 + ((i * 17) % 14) * 0.11;
-      const scaleY = scale * (1.05 + (i % 5) * 0.1);
+      // Trees in dense grove hearts grow slightly taller!
+      const groveBoost = clusterVal > 0.15 ? 1.16 : 0.95;
+      const scale = (0.82 + ((i * 17) % 15) * 0.11) * groveBoost;
+      const scaleY = scale * (1.04 + (i % 5) * 0.11);
       const rotY = (i * 1.3) % (Math.PI * 2);
       const radius = 0.42 * scale;
       // ~20% Golden Autumn Larch / Birch trees clustered naturally via low-frequency noise
       const larchNoise = simplex2D(x * 0.018 + 7, z * 0.018 - 13);
       const variant: 'SPRUCE' | 'LARCH' = larchNoise > 0.42 || i % 7 === 0 ? 'LARCH' : 'SPRUCE';
 
-      FOREST_TREES.push({ x, y, z, scale, scaleY, rotY, radius, variant });
+      // Spatial + per-tree green shade (0..4) for rich Boreal foliage color diversity
+      const greenNoise = simplex2D(x * 0.024 - 11, z * 0.024 + 5);
+      const colorShade = Math.abs(Math.floor((greenNoise + 1.0) * 2.5 + (i % 3))) % 5;
+
+      FOREST_TREES.push({ x, y, z, scale, scaleY, rotY, radius, variant, colorShade });
       spatialBuckets[getBucketIndex(x, z)].push({ x, z, radius, kind: 'TREE' });
     }
   }
 
-  // 2. Deterministic Granite Boulders
-  for (let i = 0; i < 520; i++) {
+  // 2. Deterministic Granite & Red Bull Rampage Boulders
+  for (let i = 0; i < 820; i++) {
     const rx = ((Math.sin(i * 517.3 + 9) * 43758.5453) % 1 + 1) % 1;
     const rz = ((Math.sin(i * 811.1 + 3) * 43758.5453) % 1 + 1) % 1;
     const x = (rx - 0.5) * (TERRAIN_WIDTH - 24);
-    const z = (rz - 0.5) * (TERRAIN_LENGTH - 30);
+    const z = (rz - 0.5) * (TERRAIN_LENGTH - 36);
 
-    if (Math.hypot(x - -10, z - 240) < 12) continue;
-    if (Math.hypot(x - 0, z - -475) < 15) continue;
+    if (Math.hypot(x - -10, z - 470) < 13) continue;
+    if (Math.hypot(x - 0, z - -775) < 16) continue;
 
     const gx = Math.round((x / TERRAIN_WIDTH + 0.5) * GRID_SEGMENTS_X);
     const gz = Math.round((z / TERRAIN_LENGTH + 0.5) * GRID_SEGMENTS_Z);
@@ -576,12 +611,14 @@ function initForestAndRockObstacles() {
 
     if ((sCode === 0 || sCode === 3 || sCode === 4) && y > WATER_LEVEL + 0.25) {
       // Strictly keep boulders off the asphalt road, dirt singletrack & whitewater river!
-      if (findClosestSplineSample(asphaltSamples, x, z, 25).distSq < 7.2 * 7.2) continue;
-      if (findClosestSplineSample(dirtSamples, x, z, 25).distSq < 5.2 * 5.2) continue;
-      if (findClosestSplineSample(riverSamples, x, z, 25).distSq < 8.2 * 8.2) continue;
+      if (findClosestSplineSample(asphaltSamples, x, z, 32).distSq < 7.2 * 7.2) continue;
+      if (findClosestSplineSample(dirtSamples, x, z, 32).distSq < 5.2 * 5.2) continue;
+      if (findClosestSplineSample(riverSamples, x, z, 32).distSq < 8.2 * 8.2) continue;
 
-      const sx = 0.6 + ((i * 13) % 9) * 0.18;
-      const sy = sx * (0.6 + ((i * 7) % 5) * 0.12);
+      // Larger, craggier rock outcrops in the upper Red Bull Rampage zone (y > 190m)
+      const rampageScale = y > 190 ? 1.45 : 1.0;
+      const sx = (0.6 + ((i * 13) % 9) * 0.18) * rampageScale;
+      const sy = sx * (0.65 + ((i * 7) % 5) * 0.14);
       const sz = sx * 0.9;
       const radius = sx * 0.72;
 
