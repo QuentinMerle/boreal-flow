@@ -369,25 +369,59 @@ export const TerrainChunk: React.FC = () => {
 
     const mat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.24,
-      metalness: 0.15,
+      roughness: 0.14,
+      metalness: 0.22,
       transparent: true,
-      opacity: 0.86,
-      flatShading: true,
+      opacity: 0.88,
     });
 
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = windUniforms.uTime;
       shader.vertexShader =
-        `uniform float uTime;\n` +
+        `uniform float uTime;\nvarying vec3 vWaterWorldPos;\n` +
         shader.vertexShader.replace(
           '#include <begin_vertex>',
           `
           #include <begin_vertex>
-          float wave = sin(uTime * 2.4 + position.x * 0.22 + position.z * 0.18) * 0.045;
-          transformed.y += wave;
+          vWaterWorldPos = position;
+          float isRiver = smoothstep(255.0, 215.0, position.z);
+          float flowPhase = position.z * 0.42 - uTime * mix(2.2, 8.5, isRiver);
+          float wave1 = sin(flowPhase + position.x * 0.35) * mix(0.04, 0.09, isRiver);
+          float wave2 = cos(position.z * 0.85 - uTime * mix(3.1, 11.0, isRiver) - position.x * 0.62) * mix(0.025, 0.055, isRiver);
+          transformed.y += wave1 + wave2;
           `
         );
+
+      shader.fragmentShader =
+        `uniform float uTime;\nvarying vec3 vWaterWorldPos;\n` +
+        shader.fragmentShader
+          .replace(
+            '#include <color_fragment>',
+            `
+            #include <color_fragment>
+            float isRiverFrag = smoothstep(255.0, 215.0, vWaterWorldPos.z);
+            float flowZ = vWaterWorldPos.z * mix(0.55, 0.85, isRiverFrag) - uTime * mix(1.8, 9.5, isRiverFrag);
+            float r1 = sin(vWaterWorldPos.x * 1.45 + flowZ + sin(vWaterWorldPos.z * 0.4 + uTime * 2.0));
+            float r2 = cos(vWaterWorldPos.x * 2.35 - flowZ * 1.3 + cos(vWaterWorldPos.x * 0.6 - uTime * 1.7));
+            float caustic = smoothstep(0.35, 0.92, (r1 + r2) * 0.5);
+            float foamStreak = smoothstep(0.68, 0.95, sin(vWaterWorldPos.x * 3.1 + flowZ * 1.4) * cos(vWaterWorldPos.x * 1.8 - flowZ * 0.8));
+            vec3 shimmerCol = vec3(0.36, 0.84, 0.90);
+            vec3 foamCol = vec3(0.93, 0.99, 0.98);
+            diffuseColor.rgb = mix(diffuseColor.rgb, shimmerCol, caustic * 0.28);
+            diffuseColor.rgb = mix(diffuseColor.rgb, foamCol, foamStreak * mix(0.18, 0.52, isRiverFrag));
+            `
+          )
+          .replace(
+            '#include <normal_fragment_maps>',
+            `
+            #include <normal_fragment_maps>
+            float isRiverNorm = smoothstep(255.0, 215.0, vWaterWorldPos.z);
+            float nFlow = vWaterWorldPos.z * 0.75 - uTime * mix(2.2, 9.5, isRiverNorm);
+            float nxRipple = cos(vWaterWorldPos.x * 1.8 + nFlow) * 0.16 + sin(vWaterWorldPos.x * 3.2 - nFlow * 1.3) * 0.09;
+            float nzRipple = sin(vWaterWorldPos.z * 1.6 + nFlow) * 0.16 + cos(vWaterWorldPos.x * 2.1 + nFlow * 1.1) * 0.09;
+            normal = normalize(normal + vec3(nxRipple, 0.0, nzRipple));
+            `
+          );
     };
 
     return { waterGeometry: geo, waterMaterial: mat };

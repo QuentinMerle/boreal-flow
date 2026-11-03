@@ -1262,14 +1262,14 @@ export const ArcadeController: React.FC = () => {
       const side = p.paddleSide;
       paddleRef.current.position.x = THREE.MathUtils.damp(
         paddleRef.current.position.x,
-        side * 0.28,
-        12,
+        side * 0.14,
+        14,
         dt
       );
-      paddleRef.current.position.y = 0.54 - Math.max(0, Math.sin(phase)) * 0.06;
-      paddleRef.current.position.z = 0.32 - Math.sin(phase) * 0.08;
-      // Positive rotation.z when side=+1 tilts bottom (-Y blade) outward to +X and top (+Y T-grip) inward to +0.12!
-      paddleRef.current.rotation.z = side * (0.38 + Math.cos(phase) * 0.08);
+      paddleRef.current.position.y = 0.62 - Math.max(0, Math.sin(phase)) * 0.06;
+      paddleRef.current.position.z = 0.28 - Math.sin(phase) * 0.08;
+      // Positive rotation.z when side=+1 tilts bottom (-Y blade) outward to +X and top (+Y T-grip) inward to the upper hand!
+      paddleRef.current.rotation.z = side * (0.36 + Math.cos(phase) * 0.08);
       paddleRef.current.rotation.x = Math.sin(phase) * 0.42;
     }
 
@@ -1488,7 +1488,7 @@ useGLTF.preload('/models/mountain_bike.glb');
 const CanoeMesh: React.FC<{
   paddleRef: React.MutableRefObject<THREE.Object3D | null>;
 }> = ({ paddleRef }) => {
-  const { scene } = useGLTF('/models/canoe.glb');
+  const { scene } = useGLTF('/models/canoe.glb?v=4');
 
   const canoeScene = useMemo(() => {
     const cloned = scene.clone(true);
@@ -1509,4 +1509,4 @@ const CanoeMesh: React.FC<{
   return <primitive object={canoeScene} />;
 };
 
-useGLTF.preload('/models/canoe.glb');
+useGLTF.preload('/models/canoe.glb?v=4');
