@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
+import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   useGameStore,
@@ -61,13 +62,13 @@ interface InputState {
 }
 
 interface CharacterJointRefs {
-  torso: React.RefObject<THREE.Group>;
-  head: React.RefObject<THREE.Group>;
-  scarf: React.RefObject<THREE.Mesh>;
-  leftArm: React.RefObject<THREE.Group>;
-  rightArm: React.RefObject<THREE.Group>;
-  leftLeg: React.RefObject<THREE.Group>;
-  rightLeg: React.RefObject<THREE.Group>;
+  torso: React.MutableRefObject<THREE.Object3D | null>;
+  head: React.MutableRefObject<THREE.Object3D | null>;
+  scarf: React.MutableRefObject<THREE.Object3D | null>;
+  leftArm: React.MutableRefObject<THREE.Object3D | null>;
+  rightArm: React.MutableRefObject<THREE.Object3D | null>;
+  leftLeg: React.MutableRefObject<THREE.Object3D | null>;
+  rightLeg: React.MutableRefObject<THREE.Object3D | null>;
 }
 
 export const ArcadeController: React.FC = () => {
@@ -82,24 +83,25 @@ export const ArcadeController: React.FC = () => {
   const rootGroupRef = useRef<THREE.Group>(null);
   const visualTiltRef = useRef<THREE.Group>(null);
   const blobShadowRef = useRef<THREE.Mesh>(null);
-  const paddleRef = useRef<THREE.Group>(null);
-  const bikeSteerRef = useRef<THREE.Group>(null);
-  const bikeFrontWheelRef = useRef<THREE.Group>(null);
-  const bikeRearWheelRef = useRef<THREE.Group>(null);
-  const longboardWheelsRef = useRef<(THREE.Mesh | null)[]>([]);
+  const paddleRef = useRef<THREE.Object3D | null>(null);
+  const bikeSteerRef = useRef<THREE.Object3D | null>(null);
+  const bikeFrontWheelRef = useRef<THREE.Object3D | null>(null);
+  const bikeRearWheelRef = useRef<THREE.Object3D | null>(null);
+  const bikeCrankRef = useRef<THREE.Object3D | null>(null);
+  const longboardWheelsRef = useRef<(THREE.Object3D | null)[]>([]);
   const headlampRef = useRef<THREE.SpotLight>(null);
   const headlampTargetRef = useRef<THREE.Object3D>(null);
-  const headlampLensMatRef = useRef<THREE.MeshStandardMaterial>(null);
+  const headlampLensMatRef = useRef<THREE.MeshStandardMaterial | null>(null);
   const emoteRingRef = useRef<THREE.Mesh>(null);
 
   // Expressive Character Rig Joint Refs
-  const torsoRef = useRef<THREE.Group>(null);
-  const headRef = useRef<THREE.Group>(null);
-  const scarfRef = useRef<THREE.Mesh>(null);
-  const leftArmRef = useRef<THREE.Group>(null);
-  const rightArmRef = useRef<THREE.Group>(null);
-  const leftLegRef = useRef<THREE.Group>(null);
-  const rightLegRef = useRef<THREE.Group>(null);
+  const torsoRef = useRef<THREE.Object3D | null>(null);
+  const headRef = useRef<THREE.Object3D | null>(null);
+  const scarfRef = useRef<THREE.Object3D | null>(null);
+  const leftArmRef = useRef<THREE.Object3D | null>(null);
+  const rightArmRef = useRef<THREE.Object3D | null>(null);
+  const leftLegRef = useRef<THREE.Object3D | null>(null);
+  const rightLegRef = useRef<THREE.Object3D | null>(null);
 
   const joints: CharacterJointRefs = {
     torso: torsoRef,
@@ -1097,8 +1099,8 @@ export const ArcadeController: React.FC = () => {
 
     // Animate Flowing Scarf in Wind
     if (scarfRef.current) {
-      const windFlutter = Math.sin(elapsed * (6 + p.speed * 0.8)) * (0.12 + p.speed * 0.012);
-      scarfRef.current.rotation.x = 0.35 + Math.min(1.05, p.speed * 0.04) + windFlutter;
+      const windFlutter = Math.sin(elapsed * (6 + p.speed * 0.8)) * (0.09 + p.speed * 0.01);
+      scarfRef.current.rotation.x = Math.min(0.42, p.speed * 0.016) + windFlutter;
       scarfRef.current.rotation.y = -steerInput * 0.3 + Math.cos(elapsed * 8) * 0.08;
     }
 
@@ -1213,11 +1215,14 @@ export const ArcadeController: React.FC = () => {
       bikeFrontWheelRef.current.rotation.x = sp.wheelAngle;
       bikeRearWheelRef.current.rotation.x = sp.wheelAngle;
     }
+    if (bikeCrankRef.current && mode === 'BIKE') {
+      bikeCrankRef.current.rotation.x = sp.pedalPhase;
+    }
     if (mode === 'LONGBOARD') {
       for (let w = 0; w < 4; w++) {
         const wheelMesh = longboardWheelsRef.current[w];
         if (wheelMesh) {
-          wheelMesh.rotation.y = -sp.wheelAngle * 2.8;
+          wheelMesh.rotation.x = sp.wheelAngle * 2.8;
         }
       }
     }
@@ -1334,6 +1339,7 @@ export const ArcadeController: React.FC = () => {
             steerRef={bikeSteerRef}
             frontWheelRef={bikeFrontWheelRef}
             rearWheelRef={bikeRearWheelRef}
+            crankRef={bikeCrankRef}
           />
         )}
         {showVehicles && mode === 'CANOE' && <CanoeMesh paddleRef={paddleRef} />}
@@ -1345,237 +1351,143 @@ export const ArcadeController: React.FC = () => {
 const ExplorerCharacter: React.FC<{
   mode: MovementMode;
   joints: CharacterJointRefs;
-  headlampLensMatRef: React.RefObject<THREE.MeshStandardMaterial>;
+  headlampLensMatRef: React.MutableRefObject<THREE.MeshStandardMaterial | null>;
 }> = ({ mode, joints, headlampLensMatRef }) => {
+  const { scene } = useGLTF('/models/explorer.glb');
+
+  const characterScene = useMemo(() => {
+    const cloned = scene.clone(true);
+    cloned.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+      }
+    });
+    return cloned;
+  }, [scene]);
+
+  useEffect(() => {
+    joints.torso.current = characterScene.getObjectByName('Torso') || null;
+    joints.head.current = characterScene.getObjectByName('Head') || null;
+    joints.scarf.current = characterScene.getObjectByName('Scarf') || null;
+    joints.leftArm.current = characterScene.getObjectByName('LeftArm') || null;
+    joints.rightArm.current = characterScene.getObjectByName('RightArm') || null;
+    joints.leftLeg.current = characterScene.getObjectByName('LeftLeg') || null;
+    joints.rightLeg.current = characterScene.getObjectByName('RightLeg') || null;
+
+    const lensObj = characterScene.getObjectByName('HeadlampLens') as THREE.Mesh | undefined;
+    if (lensObj && lensObj.material) {
+      const clonedLensMat = (lensObj.material as THREE.MeshStandardMaterial).clone();
+      lensObj.material = clonedLensMat;
+      headlampLensMatRef.current = clonedLensMat;
+    }
+  }, [characterScene, joints, headlampLensMatRef]);
+
   const isSpecial = mutablePhysics.specialState !== 'NONE';
   const yOffset = isSpecial
     ? 0
     : mode === 'LONGBOARD'
-    ? 0.18
+    ? 0.14
     : mode === 'BIKE'
-    ? 0.42
+    ? 0.38
     : mode === 'CANOE'
-    ? -0.12
+    ? -0.08
     : 0;
   const bodyRotY = !isSpecial && mode === 'LONGBOARD' ? 0.45 : 0;
 
   return (
     <group position={[0, yOffset, 0]} rotation={[0, bodyRotY, 0]}>
-      <group ref={joints.leftLeg} position={[-0.14, 0.62, 0]}>
-        <mesh castShadow position={[0, -0.25, 0]}>
-          <boxGeometry args={[0.16, 0.52, 0.18]} />
-          <meshStandardMaterial color="#2b3a4a" flatShading roughness={0.9} />
-        </mesh>
-      </group>
-      <group ref={joints.rightLeg} position={[0.14, 0.62, 0]}>
-        <mesh castShadow position={[0, -0.25, 0]}>
-          <boxGeometry args={[0.16, 0.52, 0.18]} />
-          <meshStandardMaterial color="#2b3a4a" flatShading roughness={0.9} />
-        </mesh>
-      </group>
-
-      <group ref={joints.torso} position={[0, 0.62, 0]}>
-        <mesh castShadow position={[0, 0.28, 0]}>
-          <boxGeometry args={[0.46, 0.58, 0.28]} />
-          <meshStandardMaterial color="#d94e34" flatShading roughness={0.88} />
-        </mesh>
-
-        <group ref={joints.leftArm} position={[-0.31, 0.5, 0]}>
-          <mesh castShadow position={[0, -0.22, 0]}>
-            <boxGeometry args={[0.14, 0.48, 0.14]} />
-            <meshStandardMaterial color="#e76f51" flatShading roughness={0.88} />
-          </mesh>
-          <mesh castShadow position={[0, -0.46, 0]}>
-            <sphereGeometry args={[0.075, 12, 10]} />
-            <meshStandardMaterial color="#2b3a4a" roughness={0.9} />
-          </mesh>
-        </group>
-
-        <group ref={joints.rightArm} position={[0.31, 0.5, 0]}>
-          <mesh castShadow position={[0, -0.22, 0]}>
-            <boxGeometry args={[0.14, 0.48, 0.14]} />
-            <meshStandardMaterial color="#e76f51" roughness={0.88} />
-          </mesh>
-          <mesh castShadow position={[0, -0.46, 0]}>
-            <sphereGeometry args={[0.075, 12, 10]} />
-            <meshStandardMaterial color="#2b3a4a" roughness={0.9} />
-          </mesh>
-        </group>
-
-        <mesh castShadow position={[0, 0.3, -0.22]}>
-          <boxGeometry args={[0.38, 0.48, 0.22]} />
-          <meshStandardMaterial color="#e09f3e" roughness={0.9} />
-        </mesh>
-        <mesh castShadow position={[0, 0.6, -0.22]} rotation={[0, 0, Math.PI / 2]}>
-          <cylinderGeometry args={[0.09, 0.09, 0.42, 14]} />
-          <meshStandardMaterial color="#386641" roughness={0.9} />
-        </mesh>
-
-        <mesh
-          ref={joints.scarf}
-          castShadow
-          position={[0, 0.56, -0.14]}
-          rotation={[0.45, 0, 0]}
-        >
-          <boxGeometry args={[0.18, 0.06, 0.62]} />
-          <meshStandardMaterial color="#ffd166" roughness={0.88} />
-        </mesh>
-
-        <group ref={joints.head} position={[0, 0.6, 0]}>
-          <mesh castShadow position={[0, 0.14, 0]}>
-            <sphereGeometry args={[0.19, 16, 14]} />
-            <meshStandardMaterial color="#f3d5b5" roughness={0.88} />
-          </mesh>
-          <mesh castShadow position={[0, 0.16, 0.16]}>
-            <boxGeometry args={[0.28, 0.1, 0.08]} />
-            <meshStandardMaterial color="#1d3557" roughness={0.35} />
-          </mesh>
-          <mesh castShadow position={[0, 0.26, -0.02]}>
-            <coneGeometry args={[0.21, 0.28, 16]} />
-            <meshStandardMaterial color="#f4a261" roughness={0.9} />
-          </mesh>
-          <mesh castShadow position={[0, 0.42, -0.04]}>
-            <sphereGeometry args={[0.065, 12, 10]} />
-            <meshStandardMaterial color="#fffbeb" roughness={0.92} />
-          </mesh>
-          <mesh position={[0, 0.25, 0.17]}>
-            <boxGeometry args={[0.12, 0.07, 0.07]} />
-            <meshStandardMaterial
-              ref={headlampLensMatRef}
-              color="#fffbeb"
-              emissive="#ffd166"
-              emissiveIntensity={0.1}
-            />
-          </mesh>
-        </group>
-      </group>
+      <primitive object={characterScene} />
     </group>
   );
 };
 
+useGLTF.preload('/models/explorer.glb');
+
 const LongboardMesh: React.FC<{
-  wheelsRef: React.MutableRefObject<(THREE.Mesh | null)[]>;
-}> = ({ wheelsRef }) => (
-  <group position={[0, 0.12, 0]}>
-    <mesh castShadow receiveShadow>
-      <boxGeometry args={[0.44, 0.06, 1.65]} />
-      <meshStandardMaterial color="#e09f3e" roughness={0.88} />
-    </mesh>
-    <mesh position={[0, 0.032, 0]}>
-      <boxGeometry args={[0.14, 0.01, 1.55]} />
-      <meshStandardMaterial color="#d94e34" roughness={0.9} />
-    </mesh>
-    {[
-      [-0.26, -0.04, 0.58],
-      [0.26, -0.04, 0.58],
-      [-0.26, -0.04, -0.58],
-      [0.26, -0.04, -0.58],
-    ].map(([x, y, z], i) => (
-      <mesh
-        key={i}
-        ref={(el) => {
-          wheelsRef.current[i] = el;
-        }}
-        castShadow
-        position={[x, y, z]}
-        rotation={[0, 0, Math.PI / 2]}
-      >
-        <cylinderGeometry args={[0.1, 0.1, 0.12, 14]} />
-        <meshStandardMaterial color="#ff6b35" roughness={0.86} />
-      </mesh>
-    ))}
-  </group>
-);
+  wheelsRef: React.MutableRefObject<(THREE.Object3D | null)[]>;
+}> = ({ wheelsRef }) => {
+  const { scene } = useGLTF('/models/longboard.glb');
+
+  const boardScene = useMemo(() => {
+    const cloned = scene.clone(true);
+    cloned.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+      }
+    });
+    return cloned;
+  }, [scene]);
+
+  useEffect(() => {
+    wheelsRef.current[0] = boardScene.getObjectByName('Wheel_FL') || null;
+    wheelsRef.current[1] = boardScene.getObjectByName('Wheel_FR') || null;
+    wheelsRef.current[2] = boardScene.getObjectByName('Wheel_RL') || null;
+    wheelsRef.current[3] = boardScene.getObjectByName('Wheel_RR') || null;
+  }, [boardScene, wheelsRef]);
+
+  return <primitive object={boardScene} />;
+};
+
+useGLTF.preload('/models/longboard.glb');
 
 const MountainBikeMesh: React.FC<{
-  steerRef: React.RefObject<THREE.Group>;
-  frontWheelRef: React.RefObject<THREE.Group>;
-  rearWheelRef: React.RefObject<THREE.Group>;
-}> = ({ steerRef, frontWheelRef, rearWheelRef }) => (
-  <group position={[0, 0.05, 0]}>
-    {/* Rear Wheel Assembly with Spokes */}
-    <group ref={rearWheelRef} position={[0, 0.34, -0.68]}>
-      <mesh castShadow rotation={[0, Math.PI / 2, 0]}>
-        <torusGeometry args={[0.32, 0.07, 10, 20]} />
-        <meshStandardMaterial color="#22272e" roughness={0.92} />
-      </mesh>
-      <mesh castShadow>
-        <boxGeometry args={[0.03, 0.58, 0.04]} />
-        <meshStandardMaterial color="#cbd5e1" roughness={0.85} />
-      </mesh>
-      <mesh castShadow>
-        <boxGeometry args={[0.03, 0.04, 0.58]} />
-        <meshStandardMaterial color="#cbd5e1" roughness={0.85} />
-      </mesh>
-    </group>
+  steerRef: React.MutableRefObject<THREE.Object3D | null>;
+  frontWheelRef: React.MutableRefObject<THREE.Object3D | null>;
+  rearWheelRef: React.MutableRefObject<THREE.Object3D | null>;
+  crankRef: React.MutableRefObject<THREE.Object3D | null>;
+}> = ({ steerRef, frontWheelRef, rearWheelRef, crankRef }) => {
+  const { scene } = useGLTF('/models/mountain_bike.glb');
 
-    {/* Frame Top Tube & Down Tube */}
-    <mesh castShadow position={[0, 0.58, 0.05]} rotation={[0.45, 0, 0]}>
-      <boxGeometry args={[0.08, 0.08, 1.25]} />
-      <meshStandardMaterial color="#52b788" roughness={0.88} />
-    </mesh>
+  const bikeScene = useMemo(() => {
+    const cloned = scene.clone(true);
+    cloned.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+      }
+    });
+    return cloned;
+  }, [scene]);
 
-    {/* Front Fork & Handlebar Steer Assembly */}
-    <group ref={steerRef} position={[0, 0.62, 0.58]}>
-      <mesh castShadow position={[0, 0, 0]} rotation={[-0.22, 0, 0]}>
-        <cylinderGeometry args={[0.04, 0.04, 0.72, 10]} />
-        <meshStandardMaterial color="#e8dcc4" roughness={0.88} />
-      </mesh>
-      <mesh castShadow position={[0, 0.33, 0.04]} rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.035, 0.035, 0.95, 10]} />
-        <meshStandardMaterial color="#22272e" roughness={0.9} />
-      </mesh>
-      {/* Brass Bicycle Bell on Right Handlebar! */}
-      <mesh castShadow position={[-0.28, 0.37, 0.04]}>
-        <cylinderGeometry args={[0.045, 0.045, 0.04, 12]} />
-        <meshStandardMaterial color="#ffd166" metalness={0.5} roughness={0.4} />
-      </mesh>
-      {/* Front Wheel Assembly with Spokes */}
-      <group ref={frontWheelRef} position={[0, -0.28, 0.1]}>
-        <mesh castShadow rotation={[0, Math.PI / 2, 0]}>
-          <torusGeometry args={[0.32, 0.07, 10, 20]} />
-          <meshStandardMaterial color="#22272e" roughness={0.92} />
-        </mesh>
-        <mesh castShadow>
-          <boxGeometry args={[0.03, 0.58, 0.04]} />
-          <meshStandardMaterial color="#cbd5e1" flatShading roughness={0.85} />
-        </mesh>
-        <mesh castShadow>
-          <boxGeometry args={[0.03, 0.04, 0.58]} />
-          <meshStandardMaterial color="#cbd5e1" flatShading roughness={0.85} />
-        </mesh>
-      </group>
-    </group>
-  </group>
-);
+  useEffect(() => {
+    steerRef.current = bikeScene.getObjectByName('SteerGroup') || null;
+    frontWheelRef.current = bikeScene.getObjectByName('FrontWheel') || null;
+    rearWheelRef.current = bikeScene.getObjectByName('RearWheel') || null;
+    crankRef.current = bikeScene.getObjectByName('Crankset') || null;
+  }, [bikeScene, steerRef, frontWheelRef, rearWheelRef, crankRef]);
 
-const CanoeMesh: React.FC<{ paddleRef: React.RefObject<THREE.Group> }> = ({ paddleRef }) => (
-  <group position={[0, 0.22, 0]}>
-    <mesh castShadow receiveShadow position={[0, 0.05, 0]}>
-      <boxGeometry args={[0.92, 0.38, 2.8]} />
-      <meshStandardMaterial color="#bc4749" flatShading roughness={0.88} />
-    </mesh>
-    <mesh castShadow position={[0, 0.14, 1.65]} rotation={[Math.PI / 2, 0, 0]}>
-      <coneGeometry args={[0.46, 0.75, 4]} />
-      <meshStandardMaterial color="#bc4749" flatShading roughness={0.88} />
-    </mesh>
-    <mesh castShadow position={[0, 0.14, -1.65]} rotation={[-Math.PI / 2, 0, 0]}>
-      <coneGeometry args={[0.46, 0.75, 4]} />
-      <meshStandardMaterial color="#bc4749" flatShading roughness={0.88} />
-    </mesh>
-    <mesh castShadow position={[0, 0.25, 0]}>
-      <boxGeometry args={[0.96, 0.05, 2.82]} />
-      <meshStandardMaterial color="#d4a373" flatShading roughness={0.9} />
-    </mesh>
-    <group ref={paddleRef} position={[0, 0.65, 0.25]}>
-      <mesh castShadow position={[0.52, -0.15, 0]} rotation={[0, 0, -0.4]}>
-        <cylinderGeometry args={[0.025, 0.025, 1.35, 5]} />
-        <meshStandardMaterial color="#e9c46a" flatShading roughness={0.9} />
-      </mesh>
-      <mesh castShadow position={[0.78, -0.62, 0]} rotation={[0, 0, -0.4]}>
-        <boxGeometry args={[0.04, 0.45, 0.2]} />
-        <meshStandardMaterial color="#d94e34" flatShading roughness={0.88} />
-      </mesh>
-    </group>
-  </group>
-);
+  return <primitive object={bikeScene} />;
+};
+
+useGLTF.preload('/models/mountain_bike.glb');
+
+const CanoeMesh: React.FC<{
+  paddleRef: React.MutableRefObject<THREE.Object3D | null>;
+}> = ({ paddleRef }) => {
+  const { scene } = useGLTF('/models/canoe.glb');
+
+  const canoeScene = useMemo(() => {
+    const cloned = scene.clone(true);
+    cloned.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+      }
+    });
+    return cloned;
+  }, [scene]);
+
+  useEffect(() => {
+    paddleRef.current = canoeScene.getObjectByName('Paddle') || null;
+  }, [canoeScene, paddleRef]);
+
+  return <primitive object={canoeScene} />;
+};
+
+useGLTF.preload('/models/canoe.glb');
