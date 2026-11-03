@@ -247,6 +247,19 @@ export const ArcadeController: React.FC = () => {
     const onKeyDown = (e: KeyboardEvent) => {
       unlockAudio();
       const code = e.code;
+
+      if (code === 'Escape' || code === 'KeyP') {
+        const st = useGameStore.getState();
+        if (st.binocularsActive) {
+          st.setBinocularsActive(false);
+        } else {
+          st.togglePause();
+        }
+        return;
+      }
+
+      if (mutablePhysics.isPaused) return;
+
       const inp = inputRef.current;
       if (code === 'KeyW' || code === 'KeyZ' || code === 'ArrowUp') inp.forward = true;
       if (code === 'KeyS' || code === 'ArrowDown') inp.backward = true;
@@ -412,35 +425,35 @@ export const ArcadeController: React.FC = () => {
         triggerHaptic(pad, 90, 0.5, 0.3);
       }
 
-      // Button 9 (Menu / Start): Toggle Day/Night
+      // Button 9 (Menu / Start): Toggle Pause Menu
       if (wasJustPressed(9)) {
-        p.timeOfDay = p.nightFactor > 0.5 ? TIME_PRESET_HOURS.GOLDEN : TIME_PRESET_HOURS.NIGHT;
+        useGameStore.getState().togglePause();
         triggerHaptic(pad, 80, 0.3, 0.4);
       }
 
       // Button 10 (L3) or Button 11 (R3): Toggle Camera Mode
-      if (wasJustPressed(10) || wasJustPressed(11)) {
+      if (!p.isPaused && (wasJustPressed(10) || wasJustPressed(11))) {
         useGameStore.getState().toggleCameraMode();
         triggerHaptic(pad, 100, 0.3, 0.5);
       }
 
       // D-Pad buttons: 12 (Up: Longboard), 13 (Down: Canoe), 14 (Left: Walk), 15 (Right: Bike)
-      if (wasJustPressed(12)) {
+      if (!p.isPaused && wasJustPressed(12)) {
         setMode('LONGBOARD');
         triggerHaptic(pad, 70, 0.2, 0.3);
-      } else if (wasJustPressed(13)) {
+      } else if (!p.isPaused && wasJustPressed(13)) {
         setMode('CANOE');
         triggerHaptic(pad, 70, 0.2, 0.3);
-      } else if (wasJustPressed(14)) {
+      } else if (!p.isPaused && wasJustPressed(14)) {
         setMode('WALK');
         triggerHaptic(pad, 70, 0.2, 0.3);
-      } else if (wasJustPressed(15)) {
+      } else if (!p.isPaused && wasJustPressed(15)) {
         setMode('BIKE');
         triggerHaptic(pad, 70, 0.2, 0.3);
       }
 
       // Right Stick (axes[2], axes[3]) for Binoculars look
-      if (binocularsActive) {
+      if (binocularsActive && !p.isPaused) {
         padBinoLookX = deadzone(pad.axes[2] ?? 0, 0.12);
         padBinoLookY = -deadzone(pad.axes[3] ?? 0, 0.12);
       }
@@ -449,6 +462,11 @@ export const ArcadeController: React.FC = () => {
       for (let b = 0; b < pad.buttons.length; b++) {
         gamepadPrevButtons.current[b] = isPressed(b);
       }
+    }
+
+    if (p.isPaused) {
+      soundscape.update(dt, mode);
+      return;
     }
 
     const keySteer = (inp.left ? 1 : 0) - (inp.right ? 1 : 0);

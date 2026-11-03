@@ -128,7 +128,7 @@ export const DayNightAtmosphere: React.FC = () => {
     const dt = Math.min(rawDelta, 0.05);
     const p = mutablePhysics;
 
-    if (!timeCyclePaused) {
+    if (!timeCyclePaused && !p.isPaused) {
       p.timeOfDay = (p.timeOfDay + dt * 0.1) % 24.0;
     }
 

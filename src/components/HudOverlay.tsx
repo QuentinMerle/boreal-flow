@@ -12,8 +12,16 @@ import { soundscape } from '../audio/soundscape';
 
 const MODES: MovementMode[] = ['WALK', 'LONGBOARD', 'BIKE', 'CANOE'];
 
+const MODE_ICONS: Record<MovementMode, string> = {
+  WALK: '🥾',
+  LONGBOARD: '🛹',
+  BIKE: '🚵',
+  CANOE: '🛶',
+};
+
 export const HudOverlay: React.FC = () => {
   const mode = useGameStore((s) => s.mode);
+  const isPaused = useGameStore((s) => s.isPaused);
   const timeCyclePaused = useGameStore((s) => s.timeCyclePaused);
   const audioMuted = useGameStore((s) => s.audioMuted);
   const binocularsActive = useGameStore((s) => s.binocularsActive);
@@ -28,6 +36,8 @@ export const HudOverlay: React.FC = () => {
   const resetTriathlon = useGameStore((s) => s.resetTriathlon);
 
   const setMode = useGameStore((s) => s.setMode);
+  const togglePause = useGameStore((s) => s.togglePause);
+  const setPaused = useGameStore((s) => s.setPaused);
   const respawnAt = useGameStore((s) => s.respawnAt);
   const setTimePreset = useGameStore((s) => s.setTimePreset);
   const toggleTimePause = useGameStore((s) => s.toggleTimePause);
@@ -36,11 +46,10 @@ export const HudOverlay: React.FC = () => {
   const toggleCameraMode = useGameStore((s) => s.toggleCameraMode);
 
   const speedDomRef = useRef<HTMLSpanElement>(null);
-  const surfaceDomRef = useRef<HTMLSpanElement>(null);
+  const telemetryWrapRef = useRef<HTMLDivElement>(null);
   const badgeDomRef = useRef<HTMLSpanElement>(null);
   const altitudeDomRef = useRef<HTMLSpanElement>(null);
   const clockDomRef = useRef<HTMLSpanElement>(null);
-  const headlampDomRef = useRef<HTMLSpanElement>(null);
   const promptDomRef = useRef<HTMLDivElement>(null);
   const binoTargetRef = useRef<HTMLDivElement>(null);
   const binoBarRef = useRef<HTMLDivElement>(null);
@@ -53,13 +62,19 @@ export const HudOverlay: React.FC = () => {
 
     const updateTelemetry = () => {
       const p = mutablePhysics;
+      const kmh = Math.round(p.speed * 2.4);
+
       if (speedDomRef.current) {
-        const kmh = Math.round(p.speed * 2.4);
         speedDomRef.current.textContent = `${kmh}`;
       }
+      if (telemetryWrapRef.current) {
+        // Organic breathing opacity: discreet when stationary (0.32), crisp at speed (0.95)
+        const activeAlpha = p.isPaused ? 0 : kmh > 3 || !p.isGrounded ? 0.94 : 0.32;
+        telemetryWrapRef.current.style.opacity = `${activeAlpha}`;
+      }
       if (speedLinesDomRef.current) {
-        // Subtle peripheral flow-state speed lines starting around 36 km/h (p.speed > 15 m/s)
-        const speedNorm = Math.max(0, Math.min(1, (p.speed - 14.5) / 18.0));
+        // Subtle peripheral flow-state speed lines starting around 36 km/h (p.speed > 14.5 m/s)
+        const speedNorm = p.isPaused ? 0 : Math.max(0, Math.min(1, (p.speed - 14.5) / 18.0));
         if (speedNorm > 0.01) {
           const flutter = 0.96 + 0.04 * Math.sin(performance.now() * 0.028);
           speedLinesDomRef.current.style.opacity = `${(speedNorm * 0.52).toFixed(3)}`;
@@ -67,10 +82,6 @@ export const HudOverlay: React.FC = () => {
         } else {
           speedLinesDomRef.current.style.opacity = '0';
         }
-      }
-      if (surfaceDomRef.current) {
-        surfaceDomRef.current.textContent =
-          p.specialState !== 'NONE' ? p.specialState : p.surface;
       }
       if (altitudeDomRef.current) {
         altitudeDomRef.current.textContent = `${Math.max(0, Math.round(p.position.y))}m`;
@@ -82,11 +93,8 @@ export const HudOverlay: React.FC = () => {
         const mStr = String(mins).padStart(2, '0');
         clockDomRef.current.textContent = `${hStr}:${mStr}`;
       }
-      if (headlampDomRef.current) {
-        headlampDomRef.current.style.display = p.headlampOn ? 'inline-block' : 'none';
-      }
       if (triathlonLiveRef.current && triathlonTimeRef.current) {
-        if (p.triathlonStatus === 'ACTIVE') {
+        if (p.triathlonStatus === 'ACTIVE' && !p.isPaused) {
           triathlonLiveRef.current.style.opacity = '1';
           triathlonLiveRef.current.style.transform = 'translate(-50%, 0)';
           const totalSecs = p.triathlonTimer;
@@ -99,7 +107,7 @@ export const HudOverlay: React.FC = () => {
         }
       }
       if (promptDomRef.current) {
-        if (p.contextPrompt) {
+        if (p.contextPrompt && !p.isPaused) {
           promptDomRef.current.textContent = p.contextPrompt;
           promptDomRef.current.style.opacity = '1';
           promptDomRef.current.style.transform = 'translate(-50%, 0)';
@@ -115,7 +123,7 @@ export const HudOverlay: React.FC = () => {
           binoBarRef.current.style.width = `${Math.round(p.scanProgress * 100)}%`;
         } else {
           binoTargetRef.current.textContent =
-            'Scan the Lake, Eastern Pines, Western Canyon, or Firewatch Tower Roof...';
+            'Scan Mirror Lake, Eastern Pines, Western Canyon, or the Firewatch Tower...';
           binoBarRef.current.style.width = '0%';
         }
       }
@@ -133,7 +141,7 @@ export const HudOverlay: React.FC = () => {
           badgeDomRef.current.textContent = 'POWERSLIDE';
           badgeDomRef.current.style.opacity = '1';
         } else if (p.isPumping) {
-          badgeDomRef.current.textContent = 'CARVE PUMP';
+          badgeDomRef.current.textContent = 'CARVE';
           badgeDomRef.current.style.opacity = '1';
         } else {
           badgeDomRef.current.style.opacity = '0';
@@ -161,26 +169,27 @@ export const HudOverlay: React.FC = () => {
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
-        padding: '20px 24px',
+        padding: '22px 28px',
         color: '#f4f1ea',
+        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
       }}
     >
       {/* Subtle Tilt-Shift / Distance Horizon Depth-of-Field Blur (Zero WebGL GPU cost) */}
-      {!binocularsActive && (
+      {!binocularsActive && !isPaused && (
         <div
           style={{
             position: 'fixed',
             top: 0,
             left: 0,
             right: 0,
-            height: '28vh',
+            height: '26vh',
             pointerEvents: 'none',
-            backdropFilter: 'blur(2.4px)',
-            WebkitBackdropFilter: 'blur(2.4px)',
+            backdropFilter: 'blur(2.2px)',
+            WebkitBackdropFilter: 'blur(2.2px)',
             maskImage:
-              'linear-gradient(to bottom, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.42) 45%, rgba(0,0,0,0) 100%)',
+              'linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.38) 45%, rgba(0,0,0,0) 100%)',
             WebkitMaskImage:
-              'linear-gradient(to bottom, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.42) 45%, rgba(0,0,0,0) 100%)',
+              'linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.38) 45%, rgba(0,0,0,0) 100%)',
             zIndex: 0,
           }}
         />
@@ -205,8 +214,8 @@ export const HudOverlay: React.FC = () => {
         }}
       />
 
-      {/* Step 3.2: Binoculars Viewfinder Vignette & Acoustic Scanner */}
-      {binocularsActive && (
+      {/* Binoculars Viewfinder Vignette & Acoustic Scanner */}
+      {binocularsActive && !isPaused && (
         <div
           style={{
             position: 'fixed',
@@ -218,6 +227,7 @@ export const HudOverlay: React.FC = () => {
             alignItems: 'center',
             justifyContent: 'center',
             pointerEvents: 'none',
+            zIndex: 15,
           }}
         >
           <div
@@ -225,7 +235,7 @@ export const HudOverlay: React.FC = () => {
               width: '210px',
               height: '210px',
               borderRadius: '50%',
-              border: '2px dashed rgba(255, 209, 102, 0.65)',
+              border: '1.5px dashed rgba(255, 209, 102, 0.6)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -233,8 +243,8 @@ export const HudOverlay: React.FC = () => {
           >
             <div
               style={{
-                width: '10px',
-                height: '10px',
+                width: '8px',
+                height: '8px',
                 borderRadius: '50%',
                 background: '#ffd166',
               }}
@@ -244,26 +254,24 @@ export const HudOverlay: React.FC = () => {
           <div
             style={{
               marginTop: '20px',
-              background: 'rgba(15, 23, 22, 0.9)',
+              background: 'rgba(15, 23, 22, 0.82)',
+              backdropFilter: 'blur(8px)',
               padding: '10px 18px',
-              borderRadius: '10px',
-              border: '1px solid rgba(255, 209, 102, 0.4)',
+              borderRadius: '999px',
+              border: '1px solid rgba(255, 209, 102, 0.35)',
               textAlign: 'center',
-              minWidth: '340px',
+              minWidth: '320px',
             }}
           >
-            <div style={{ fontSize: '11px', color: '#ffd166', fontWeight: 800, letterSpacing: '0.1em' }}>
-              🔭 ACOUSTIC BINOCULARS (Use WASD / Arrows to Aim • Press B to Exit)
-            </div>
-            <div ref={binoTargetRef} style={{ fontSize: '13px', marginTop: '4px', fontWeight: 600 }}>
-              Scan the Lake, Pines, Canyon, or Firewatch Tower...
+            <div ref={binoTargetRef} style={{ fontSize: '12.5px', fontWeight: 600 }}>
+              Scan Mirror Lake, Pines, Canyon, or the Firewatch Tower...
             </div>
             <div
               style={{
-                height: '5px',
+                height: '4px',
                 background: 'rgba(255,255,255,0.12)',
                 borderRadius: '3px',
-                marginTop: '8px',
+                marginTop: '6px',
                 overflow: 'hidden',
               }}
             >
@@ -281,79 +289,77 @@ export const HudOverlay: React.FC = () => {
         </div>
       )}
 
-      {/* Step 3.2: Floating Live Triathlon Chronometer (60Hz Direct DOM) */}
+      {/* Floating Live Triathlon Chronometer (Only visible during an active run) */}
       <div
         ref={triathlonLiveRef}
         style={{
           position: 'fixed',
-          top: '24px',
+          top: '22px',
           left: '50%',
           transform: 'translate(-50%, -12px)',
           opacity: 0,
-          transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-          background: 'rgba(20, 29, 27, 0.88)',
+          transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+          background: 'rgba(16, 24, 22, 0.68)',
           backdropFilter: 'blur(10px)',
-          border: '1.5px solid #ffd166',
+          border: '1px solid rgba(255, 209, 102, 0.45)',
           borderRadius: '999px',
-          padding: '8px 20px',
+          padding: '6px 18px',
           display: 'flex',
           alignItems: 'center',
-          gap: '12px',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          gap: '10px',
           pointerEvents: 'none',
           zIndex: 10,
         }}
       >
-        <span style={{ fontSize: '11px', fontWeight: 800, color: '#ffd166', letterSpacing: '0.12em' }}>
-          🌲 TRIATHLON
+        <span style={{ fontSize: '10px', fontWeight: 800, color: '#ffd166', letterSpacing: '0.14em' }}>
+          DESCENT
         </span>
         <span
           ref={triathlonTimeRef}
           style={{
-            fontSize: '22px',
-            fontWeight: 900,
+            fontSize: '19px',
+            fontWeight: 800,
             fontVariantNumeric: 'tabular-nums',
             color: '#f4f1ea',
-            letterSpacing: '0.04em',
           }}
         >
           0:00.0
         </span>
-        <span style={{ fontSize: '13px', color: '#a3b8b0', fontWeight: 600 }}>
-          {triathlonVehicles.map((v) => (v === 'LONGBOARD' ? '🛹' : v === 'BIKE' ? '🚵' : v === 'CANOE' ? '🛶' : '🚶')).join(' ')}
+        <span style={{ fontSize: '13px' }}>
+          {triathlonVehicles.map((v) => MODE_ICONS[v]).join(' ')}
         </span>
       </div>
 
-      {/* Step 3.2: Triumphant Boreal Triathlon Finish Card */}
-      {triathlonStatus === 'FINISHED' && (
+      {/* Triumphant Boreal Triathlon Finish Card */}
+      {triathlonStatus === 'FINISHED' && !isPaused && (
         <div
           style={{
             position: 'fixed',
             top: '50%',
             left: '50%',
             transform: 'translate(-50%, -50%)',
-            background: 'rgba(20, 29, 27, 0.94)',
-            backdropFilter: 'blur(14px)',
-            border: '2px solid #ffd166',
-            borderRadius: '20px',
+            background: 'rgba(16, 24, 22, 0.92)',
+            backdropFilter: 'blur(16px)',
+            border: '1.5px solid rgba(255, 209, 102, 0.6)',
+            borderRadius: '22px',
             padding: '28px 36px',
             textAlign: 'center',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.65)',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.55)',
             pointerEvents: 'auto',
-            maxWidth: '440px',
+            maxWidth: '420px',
             width: '90%',
-            zIndex: 100,
+            zIndex: 90,
           }}
         >
-          <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.18em', color: '#ffd166' }}>
-            🌲 BOREAL TRIATHLON COMPLETED 🌲
+          <div style={{ fontSize: '10px', fontWeight: 800, letterSpacing: '0.2em', color: '#ffd166' }}>
+            BOREAL DESCENT COMPLETED
           </div>
 
-          <div style={{ fontSize: '48px', margin: '14px 0 6px' }}>
+          <div style={{ fontSize: '44px', margin: '12px 0 4px' }}>
             {triathlonBadge === 'MAPLE' ? '🍁' : triathlonBadge === 'JAY' ? '🪶' : '🦌'}
           </div>
 
-          <div style={{ fontSize: '20px', fontWeight: 900, color: '#ffd166' }}>
+          <div style={{ fontSize: '18px', fontWeight: 800, color: '#ffd166' }}>
             {triathlonBadge === 'MAPLE'
               ? "FEUILLE D'ÉRABLE (OR)"
               : triathlonBadge === 'JAY'
@@ -361,33 +367,16 @@ export const HudOverlay: React.FC = () => {
               : "BOIS D'ORIGNAL (BRONZE)"}
           </div>
 
-          <div style={{ fontSize: '34px', fontWeight: 900, margin: '8px 0', fontVariantNumeric: 'tabular-nums', color: '#f4f1ea' }}>
+          <div
+            style={{
+              fontSize: '34px',
+              fontWeight: 900,
+              margin: '6px 0 14px',
+              fontVariantNumeric: 'tabular-nums',
+              color: '#f4f1ea',
+            }}
+          >
             {triathlonFinishTime.toFixed(1)}s
-          </div>
-
-          {triathlonFinishTime <= triathlonPB && (
-            <div
-              style={{
-                display: 'inline-block',
-                background: 'rgba(255, 209, 102, 0.2)',
-                color: '#ffd166',
-                border: '1px solid rgba(255, 209, 102, 0.5)',
-                borderRadius: '6px',
-                padding: '3px 10px',
-                fontSize: '11px',
-                fontWeight: 800,
-                marginBottom: '12px',
-              }}
-            >
-              🏆 NOUVEAU RECORD PERSONNEL !
-            </div>
-          )}
-
-          <div style={{ fontSize: '12px', color: '#a3b8b0', margin: '8px 0 20px', fontWeight: 600 }}>
-            Itinéraire :{' '}
-            <strong style={{ color: '#fff' }}>
-              {triathlonVehicles.map((v) => PHYSICS_PRESETS[v].label).join(' ➔ ')}
-            </strong>
           </div>
 
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
@@ -400,9 +389,9 @@ export const HudOverlay: React.FC = () => {
                 background: '#eb5e46',
                 color: '#fff',
                 border: 'none',
-                borderRadius: '10px',
-                padding: '10px 18px',
-                fontWeight: 800,
+                borderRadius: '999px',
+                padding: '10px 20px',
+                fontWeight: 700,
                 fontSize: '13px',
                 cursor: 'pointer',
               }}
@@ -412,487 +401,530 @@ export const HudOverlay: React.FC = () => {
             <button
               onClick={resetTriathlon}
               style={{
-                background: 'rgba(255,255,255,0.12)',
+                background: 'rgba(255,255,255,0.1)',
                 color: '#f4f1ea',
                 border: 'none',
-                borderRadius: '10px',
-                padding: '10px 16px',
-                fontWeight: 700,
+                borderRadius: '999px',
+                padding: '10px 18px',
+                fontWeight: 600,
                 fontSize: '13px',
                 cursor: 'pointer',
               }}
             >
-              Fermer ✕
+              Continuer
             </button>
           </div>
         </div>
       )}
 
-      {/* Contextual Interaction Prompt Pill */}
+      {/* Contextual Interaction Prompt Pill ([E] Rack / Zipline / Campfire) */}
       <div
         ref={promptDomRef}
         style={{
           position: 'fixed',
-          bottom: '112px',
+          bottom: '84px',
           left: '50%',
           transform: 'translate(-50%, 8px)',
           opacity: 0,
-          transition: 'all 0.16s ease',
-          background: 'rgba(20, 29, 27, 0.92)',
-          border: '1px solid #ffd166',
+          transition: 'all 0.18s ease',
+          background: 'rgba(16, 24, 22, 0.78)',
+          backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(255, 209, 102, 0.45)',
           color: '#fffbeb',
-          padding: '10px 20px',
+          padding: '8px 18px',
           borderRadius: '999px',
-          fontWeight: 800,
-          fontSize: '14px',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+          fontWeight: 600,
+          fontSize: '13px',
+          letterSpacing: '0.01em',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+          zIndex: 10,
         }}
       />
 
-      {/* Top Bar: Title, Wildlife Field Notebook & Teleports */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          gap: '12px',
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'stretch', flexWrap: 'wrap' }}>
-          <div
+      {/* --- ULTRA-MINIMAL TOP BAR (Only a whisper-quiet Pause Pill in Top-Right!) --- */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', zIndex: 20 }}>
+        {!isPaused && (
+          <button
+            onClick={() => {
+              soundscape.init();
+              togglePause();
+            }}
             style={{
-              background: 'rgba(20, 29, 27, 0.78)',
+              pointerEvents: 'auto',
+              background: 'rgba(16, 24, 22, 0.42)',
               backdropFilter: 'blur(8px)',
-              padding: '12px 18px',
-              borderRadius: '12px',
-              border: '1px solid rgba(255,255,255,0.1)',
+              color: 'rgba(244, 241, 234, 0.85)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: '999px',
+              padding: '6px 14px',
+              fontSize: '11.5px',
+              fontWeight: 600,
+              letterSpacing: '0.06em',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '7px',
+              transition: 'all 0.2s ease',
             }}
           >
-            <div
+            <span style={{ fontSize: '10px', opacity: 0.8 }}>⏸</span>
+            <span>MENU • ESC</span>
+          </button>
+        )}
+      </div>
+
+      {/* --- ULTRA-ORGANIC BOTTOM BAR (Discreet Mode Pill + Frameless Speed Readout) --- */}
+      {!isPaused && (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-end',
+            zIndex: 10,
+          }}
+        >
+          {/* Left: Compact Organic Mode Pill (Click to cycle or press 1-4) */}
+          <div
+            style={{
+              pointerEvents: 'auto',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'rgba(16, 24, 22, 0.42)',
+              backdropFilter: 'blur(8px)',
+              padding: '5px 8px 5px 12px',
+              borderRadius: '999px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+            }}
+          >
+            <span style={{ fontSize: '14px' }}>{MODE_ICONS[mode]}</span>
+            <span
               style={{
-                fontSize: '11px',
-                letterSpacing: '0.14em',
-                textTransform: 'uppercase',
-                color: '#a3b8b0',
+                fontSize: '12px',
                 fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
+                color: activePreset.accentColor,
+                letterSpacing: '0.02em',
+                marginRight: '4px',
               }}
             >
-              <span>Phase 4.2 • Cozy Campfire & Emotes</span>
-              <span
-                style={{
-                  background: gamepadConnected ? '#06d6a0' : 'rgba(255,255,255,0.08)',
-                  color: gamepadConnected ? '#141d1b' : '#7c8f88',
-                  padding: '1px 6px',
-                  borderRadius: '4px',
-                  fontSize: '10px',
-                  fontWeight: 800,
-                  letterSpacing: '0.04em',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                {gamepadConnected ? '🎮 GAMEPAD READY' : '⌨️ KEYBOARD'}
-              </span>
-              <span
-                ref={headlampDomRef}
-                style={{
-                  background: '#ffd166',
-                  color: '#141d1b',
-                  padding: '1px 6px',
-                  borderRadius: '4px',
-                  fontSize: '10px',
-                  fontWeight: 800,
-                  display: 'none',
-                }}
-              >
-                🔦 HEADLAMP ON
-              </span>
-            </div>
-            <div
-              style={{
-                fontSize: '20px',
-                fontWeight: 800,
-                marginTop: '2px',
-                display: 'flex',
-                alignItems: 'baseline',
-                gap: '10px',
-              }}
-            >
-              <span>BOREAL FLOW</span>
-              <span
-                ref={clockDomRef}
-                style={{
-                  fontSize: '14px',
-                  fontVariantNumeric: 'tabular-nums',
-                  color: '#ffd166',
-                  fontWeight: 700,
-                }}
-              >
-                17:30
-              </span>
-              {triathlonPB < 999 && (
-                <span
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 800,
-                    color: '#ffd166',
-                    background: 'rgba(255, 209, 102, 0.15)',
-                    padding: '2px 7px',
-                    borderRadius: '5px',
-                    border: '1px solid rgba(255, 209, 102, 0.35)',
-                  }}
-                >
-                  🏆 PB: {triathlonPB.toFixed(1)}s
-                </span>
-              )}
+              {activePreset.label}
+            </span>
+            <div style={{ display: 'flex', gap: '3px' }}>
+              {MODES.map((m) => {
+                const isAct = m === mode;
+                const p = PHYSICS_PRESETS[m];
+                return (
+                  <button
+                    key={m}
+                    onClick={() => {
+                      soundscape.init();
+                      setMode(m, true);
+                    }}
+                    title={`${p.label} (${p.keyHint})`}
+                    style={{
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '50%',
+                      border: 'none',
+                      background: isAct ? p.accentColor : 'rgba(255, 255, 255, 0.08)',
+                      color: isAct ? '#141d1b' : 'rgba(244, 241, 234, 0.65)',
+                      fontSize: '10.5px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    {p.keyHint}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* Step 3.2 & 4.2: Wildlife Notebook + Emote Bell Button */}
+          {/* Right: Frameless Poetic Telemetry (Breathes with Speed) */}
           <div
+            ref={telemetryWrapRef}
             style={{
-              background: 'rgba(20, 29, 27, 0.78)',
-              backdropFilter: 'blur(8px)',
-              padding: '10px 14px',
-              borderRadius: '12px',
-              border: '1px solid rgba(255,255,255,0.1)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              gap: '4px',
-              pointerEvents: 'auto',
+              textAlign: 'right',
+              transition: 'opacity 0.35s ease',
+              opacity: 0.32,
+              textShadow: '0 2px 12px rgba(0, 0, 0, 0.45)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 800, color: '#ffd166' }}>
-                📓 WILDLIFE ({discoveredBirds.length}/{WILDLIFE_SPECIES.length})
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: '8px',
+                marginBottom: '2px',
+              }}
+            >
+              <span
+                ref={badgeDomRef}
+                style={{
+                  background: activePreset.accentColor,
+                  color: '#141d1b',
+                  fontSize: '9.5px',
+                  fontWeight: 800,
+                  letterSpacing: '0.08em',
+                  padding: '2px 8px',
+                  borderRadius: '999px',
+                  opacity: 0,
+                  transition: 'opacity 0.15s ease',
+                  textShadow: 'none',
+                }}
+              >
+                FLOW
               </span>
-              <div style={{ display: 'flex', gap: '6px' }}>
+              <span
+                ref={altitudeDomRef}
+                style={{
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  color: 'rgba(244, 241, 234, 0.72)',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                210m
+              </span>
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                justifyContent: 'flex-end',
+                gap: '5px',
+              }}
+            >
+              <span
+                ref={speedDomRef}
+                style={{
+                  fontSize: '34px',
+                  fontWeight: 800,
+                  lineHeight: 1,
+                  fontVariantNumeric: 'tabular-nums',
+                  color: '#f4f1ea',
+                  letterSpacing: '-0.02em',
+                }}
+              >
+                0
+              </span>
+              <span
+                style={{
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  color: 'rgba(244, 241, 234, 0.65)',
+                }}
+              >
+                km/h
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          FIELD JOURNAL & PAUSE OVERLAY (Toggled via ESC / P / Gamepad Start)
+         ===================================================================== */}
+      {isPaused && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPaused(false);
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(12, 18, 17, 0.68)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            pointerEvents: 'auto',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            zIndex: 100,
+          }}
+        >
+          <div
+            style={{
+              background: 'rgba(20, 29, 27, 0.92)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: '24px',
+              padding: '28px 32px',
+              maxWidth: '580px',
+              width: '100%',
+              boxShadow: '0 28px 80px rgba(0, 0, 0, 0.6)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '20px',
+            }}
+          >
+            {/* Header: Title, Clock & Resume Button */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                paddingBottom: '16px',
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: '10.5px',
+                    fontWeight: 700,
+                    letterSpacing: '0.16em',
+                    color: '#a3b8b0',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  PARC NATIONAL BORÉAL • PAUSE
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginTop: '2px' }}>
+                  <span style={{ fontSize: '24px', fontWeight: 800, letterSpacing: '-0.01em' }}>
+                    BOREAL FLOW
+                  </span>
+                  <span
+                    ref={clockDomRef}
+                    style={{
+                      fontSize: '14px',
+                      fontVariantNumeric: 'tabular-nums',
+                      color: '#ffd166',
+                      fontWeight: 700,
+                    }}
+                  >
+                    17:30
+                  </span>
+                  {triathlonPB < 999 && (
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        color: '#ffd166',
+                        background: 'rgba(255, 209, 102, 0.14)',
+                        padding: '2px 8px',
+                        borderRadius: '999px',
+                      }}
+                    >
+                      🏆 Record : {triathlonPB.toFixed(1)}s
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <button
+                onClick={() => setPaused(false)}
+                style={{
+                  background: '#06d6a0',
+                  color: '#141d1b',
+                  border: 'none',
+                  borderRadius: '999px',
+                  padding: '10px 22px',
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                ▶ Reprendre (Esc)
+              </button>
+            </div>
+
+            {/* Section 1: Teleport / Drop-In Locations */}
+            <div>
+              <div style={sectionHeaderStyle}>⛰️ TÉLÉPORTATION / POINTS DE DÉPART</div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button
                   onClick={() => {
                     soundscape.init();
-                    triggerPlayerEmote();
+                    respawnAt('SUMMIT_ROAD', 'LONGBOARD');
                   }}
-                  style={{
-                    background: 'rgba(255, 209, 102, 0.2)',
-                    color: '#ffd166',
-                    border: '1px solid rgba(255, 209, 102, 0.5)',
-                    borderRadius: '6px',
-                    padding: '3px 8px',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
+                  style={journalBtnStyle('#eb5e46')}
                 >
-                  {mode === 'BIKE' ? '🔔 Bike Bell (C)' : '👋 Chime / Wave (C)'}
+                  🛹 Sommet Route (Longboard)
+                </button>
+                <button
+                  onClick={() => {
+                    soundscape.init();
+                    respawnAt('SUMMIT_TRAIL', 'BIKE');
+                  }}
+                  style={journalBtnStyle('#52b788')}
+                >
+                  🚵 Sommet Singletrack (VTT)
+                </button>
+                <button
+                  onClick={() => {
+                    soundscape.init();
+                    respawnAt('LAKE_SHORE', 'CANOE');
+                  }}
+                  style={journalBtnStyle('#4ea8de')}
+                >
+                  🛶 Rapides d'Eau Vive (Kayak)
+                </button>
+                <button
+                  onClick={() => {
+                    soundscape.init();
+                    respawnAt('FIREWATCH_TOWER', 'WALK');
+                  }}
+                  style={journalBtnStyle('#ffd166')}
+                >
+                  🗼 Tour de Guet (Tyrolienne)
+                </button>
+                <button
+                  onClick={() => {
+                    soundscape.init();
+                    respawnAt('CAMPFIRE_HUB', 'WALK');
+                  }}
+                  style={journalBtnStyle('#ff9f1c')}
+                >
+                  🔥 Feu de Camp au Lac
+                </button>
+              </div>
+            </div>
+
+            {/* Section 2: Atmosphere, Camera & Sound */}
+            <div>
+              <div style={sectionHeaderStyle}>🌅 ATMOSPHÈRE, CAMÉRA & AUDIO</div>
+              <div style={{ display: 'flex', gap: '7px', flexWrap: 'wrap' }}>
+                <button onClick={() => handleTimePreset('DAWN')} style={smallPillStyle('#e8a598')}>
+                  🌅 Aube
+                </button>
+                <button onClick={() => handleTimePreset('NOON')} style={smallPillStyle('#8ecae6')}>
+                  ☀️ Midi
+                </button>
+                <button onClick={() => handleTimePreset('GOLDEN')} style={smallPillStyle('#ff9b54')}>
+                  🌇 Golden Hour
+                </button>
+                <button onClick={() => handleTimePreset('NIGHT')} style={smallPillStyle('#7ca5d8')}>
+                  🌙 Nuit (N)
+                </button>
+                <button onClick={toggleTimePause} style={smallPillStyle('#a3b8b0')}>
+                  {timeCyclePaused ? '▶️ Cycle Solaire' : '⏸️ Figer le Ciel'}
                 </button>
                 <button
                   onClick={() => {
                     soundscape.init();
                     toggleCameraMode();
                   }}
-                  style={{
-                    background: cameraMode === 'COCKPIT' ? '#ff9b54' : 'rgba(255,255,255,0.12)',
-                    color: cameraMode === 'COCKPIT' ? '#141d1b' : '#f4f1ea',
-                    border: 'none',
-                    borderRadius: '6px',
-                    padding: '3px 8px',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
+                  style={smallPillStyle('#ff9b54')}
                 >
-                  {cameraMode === 'COCKPIT' ? '🎥 Cockpit (V)' : '🎥 Diorama (V)'}
+                  🎥 Vue : {cameraMode === 'COCKPIT' ? 'Cockpit (V)' : 'Diorama (V)'}
                 </button>
                 <button
                   onClick={() => {
                     soundscape.init();
-                    toggleBinoculars();
+                    toggleAudioMute();
                   }}
-                  style={{
-                    background: binocularsActive ? '#ffd166' : 'rgba(255,255,255,0.12)',
-                    color: binocularsActive ? '#141d1b' : '#f4f1ea',
-                    border: 'none',
-                    borderRadius: '6px',
-                    padding: '3px 8px',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
+                  style={smallPillStyle(audioMuted ? '#ef476f' : '#52b788')}
                 >
-                  🔭 Binoculars (B)
+                  {audioMuted ? '🔇 Audio Coupé' : '🔊 Son ASMR'}
                 </button>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-              {WILDLIFE_SPECIES.map((w) => {
-                const found = discoveredBirds.includes(w.id);
-                return (
-                  <span
-                    key={w.id}
-                    style={{
-                      fontSize: '11px',
-                      padding: '2px 7px',
-                      borderRadius: '5px',
-                      background: found ? 'rgba(6, 214, 160, 0.22)' : 'rgba(255,255,255,0.06)',
-                      color: found ? '#06d6a0' : '#7c8f88',
-                      border: `1px solid ${found ? '#06d6a066' : 'transparent'}`,
-                      fontWeight: 600,
-                    }}
-                  >
-                    {found ? `✓ ${w.frenchName}` : '???'}
-                  </span>
-                );
-              })}
-            </div>
-          </div>
-        </div>
 
-        {/* Right Controls: Drop-In Teleports + Day/Night Palettes */}
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-end',
-            gap: '8px',
-            pointerEvents: 'auto',
-          }}
-        >
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <button
-              onClick={() => {
-                soundscape.init();
-                respawnAt('CAMPFIRE_HUB', 'WALK');
-              }}
-              style={teleportBtnStyle('#ff9f1c')}
-            >
-              🔥 Sit by Campfire
-            </button>
-            <button
-              onClick={() => {
-                soundscape.init();
-                respawnAt('FIREWATCH_TOWER', 'WALK');
-              }}
-              style={teleportBtnStyle('#ffd166')}
-            >
-              🗼 Firewatch Tower
-            </button>
-            <button
-              onClick={() => {
-                soundscape.init();
-                respawnAt('SUMMIT_ROAD', 'LONGBOARD');
-              }}
-              style={teleportBtnStyle('#eb5e46')}
-            >
-              ⛰️ Summit Road (Longboard)
-            </button>
-            <button
-              onClick={() => {
-                soundscape.init();
-                respawnAt('SUMMIT_TRAIL', 'BIKE');
-              }}
-              style={teleportBtnStyle('#52b788')}
-            >
-              🌲 Singletrack (VTT)
-            </button>
-            <button
-              onClick={() => {
-                soundscape.init();
-                respawnAt('LAKE_SHORE', 'CANOE');
-              }}
-              style={teleportBtnStyle('#4ea8de')}
-            >
-              🛶 Whitewater Rapids
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            <button onClick={() => handleTimePreset('DAWN')} style={smallPillStyle('#e8a598')}>
-              🌅 Dawn
-            </button>
-            <button onClick={() => handleTimePreset('NOON')} style={smallPillStyle('#8ecae6')}>
-              ☀️ Noon
-            </button>
-            <button onClick={() => handleTimePreset('GOLDEN')} style={smallPillStyle('#ff9b54')}>
-              🌇 Golden Hour
-            </button>
-            <button onClick={() => handleTimePreset('NIGHT')} style={smallPillStyle('#7ca5d8')}>
-              🌙 Night (N)
-            </button>
-            <button onClick={toggleTimePause} style={smallPillStyle('#a3b8b0')}>
-              {timeCyclePaused ? '▶️ Resume Sun' : '⏸️ Hold Sky'}
-            </button>
-            <button
-              onClick={() => {
-                soundscape.init();
-                toggleAudioMute();
-              }}
-              style={smallPillStyle(audioMuted ? '#ef476f' : '#52b788')}
-            >
-              {audioMuted ? '🔇 Muted' : '🔊 ASMR'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom Bar: Mode Switcher & Speedometer */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-end',
-          gap: '16px',
-          flexWrap: 'wrap',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-            pointerEvents: 'auto',
-          }}
-        >
-          <div style={{ display: 'flex', gap: '8px' }}>
-            {MODES.map((m) => {
-              const preset = PHYSICS_PRESETS[m];
-              const active = mode === m;
-              return (
+            {/* Section 3: Wildlife Field Guide */}
+            <div>
+              <div
+                style={{
+                  ...sectionHeaderStyle,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <span>📓 CARNET D'OBSERVATION ({discoveredBirds.length}/{WILDLIFE_SPECIES.length})</span>
                 <button
-                  key={m}
                   onClick={() => {
                     soundscape.init();
-                    setMode(m, true);
+                    setPaused(false);
+                    toggleBinoculars();
                   }}
                   style={{
-                    background: active ? preset.accentColor : 'rgba(20, 29, 27, 0.78)',
-                    color: active ? '#141d1b' : '#f4f1ea',
-                    border: `1px solid ${active ? preset.accentColor : 'rgba(255,255,255,0.12)'}`,
-                    padding: '10px 14px',
-                    borderRadius: '10px',
-                    cursor: 'pointer',
+                    background: 'rgba(255, 209, 102, 0.16)',
+                    color: '#ffd166',
+                    border: '1px solid rgba(255, 209, 102, 0.4)',
+                    borderRadius: '999px',
+                    padding: '3px 10px',
+                    fontSize: '11px',
                     fontWeight: 700,
-                    fontSize: '13px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    transition: 'all 0.15s ease',
+                    cursor: 'pointer',
                   }}
                 >
-                  <span
-                    style={{
-                      background: active ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.12)',
-                      color: active ? '#fff' : '#cbd5e1',
-                      padding: '2px 6px',
-                      borderRadius: '5px',
-                      fontSize: '11px',
-                    }}
-                  >
-                    {preset.keyHint}
-                  </span>
-                  {preset.label}
+                  🔭 Ouvrir les Jumelles (B)
                 </button>
-              );
-            })}
-          </div>
-
-          <div
-            style={{
-              background: 'rgba(20, 29, 27, 0.78)',
-              padding: '8px 14px',
-              borderRadius: '8px',
-              fontSize: '11.5px',
-              color: '#c2d1cb',
-              border: '1px solid rgba(255,255,255,0.08)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '4px',
-            }}
-          >
-            <div>
-              <strong>WASD / ZQSD:</strong> Steer & Throttle • <strong>V:</strong> Cockpit / Diorama •{' '}
-              <strong>C / F:</strong> Bell / Wave • <strong>E:</strong> Campfire / Zipline •{' '}
-              <strong>B:</strong> Binoculars • <strong>Space:</strong> Hop / Powerslide
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {WILDLIFE_SPECIES.map((w) => {
+                  const found = discoveredBirds.includes(w.id);
+                  return (
+                    <span
+                      key={w.id}
+                      style={{
+                        fontSize: '11.5px',
+                        padding: '5px 11px',
+                        borderRadius: '999px',
+                        background: found ? 'rgba(6, 214, 160, 0.18)' : 'rgba(255,255,255,0.05)',
+                        color: found ? '#06d6a0' : '#7c8f88',
+                        border: `1px solid ${found ? '#06d6a055' : 'rgba(255,255,255,0.06)'}`,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {found ? `✓ ${w.frenchName}` : `🔒 ${w.biome}`}
+                    </span>
+                  );
+                })}
+              </div>
             </div>
-            <div style={{ color: gamepadConnected ? '#06d6a0' : '#889e95', fontSize: '11px' }}>
-              <strong>🎮 Gamepad:</strong> Left Stick Steer • <strong>RT:</strong> Throttle • <strong>LT:</strong> Drift •{' '}
-              <strong>A:</strong> Hop • <strong>X:</strong> Action • <strong>Y / RB:</strong> Bell •{' '}
-              <strong>R3 / L3:</strong> Cockpit • <strong>LB:</strong> Binoculars
+
+            {/* Footer: Compact Controls Guide */}
+            <div
+              style={{
+                background: 'rgba(255, 255, 255, 0.04)',
+                borderRadius: '12px',
+                padding: '10px 14px',
+                fontSize: '11px',
+                color: '#9ab0a7',
+                lineHeight: 1.6,
+              }}
+            >
+              <div>
+                <strong style={{ color: '#f4f1ea' }}>Clavier :</strong> WASD / Flèches (Diriger & Pousser) •{' '}
+                <strong style={{ color: '#f4f1ea' }}>Shift / S + Virage</strong> (Powerslide) •{' '}
+                <strong style={{ color: '#f4f1ea' }}>Espace</strong> (Saut / Ollie) •{' '}
+                <strong style={{ color: '#f4f1ea' }}>1–4</strong> (Équipement) •{' '}
+                <strong style={{ color: '#f4f1ea' }}>E</strong> (Action) •{' '}
+                <strong style={{ color: '#f4f1ea' }}>C</strong> (Sonnette)
+              </div>
+              <div>
+                <strong style={{ color: gamepadConnected ? '#06d6a0' : '#f4f1ea' }}>
+                  {gamepadConnected ? '🎮 Manette Connectée :' : '🎮 Manette :'}
+                </strong>{' '}
+                Stick G (Diriger) • RT (Pousser) • LT / B (Powerslide) • A (Saut) • X (Action) • Croix (Équipement) • Start (Pause)
+              </div>
             </div>
           </div>
         </div>
-
-        {/* Live Telemetry Card */}
-        <div
-          style={{
-            background: 'rgba(20, 29, 27, 0.82)',
-            backdropFilter: 'blur(8px)',
-            padding: '14px 20px',
-            borderRadius: '14px',
-            border: `1px solid ${activePreset.accentColor}55`,
-            minWidth: '185px',
-            textAlign: 'right',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span
-              ref={badgeDomRef}
-              style={{
-                background: activePreset.accentColor,
-                color: '#141d1b',
-                fontSize: '10px',
-                fontWeight: 800,
-                padding: '2px 7px',
-                borderRadius: '4px',
-                opacity: 0,
-                transition: 'opacity 0.12s ease',
-              }}
-            >
-              FLOW
-            </span>
-            <span style={{ fontSize: '11px', color: '#9ab0a7', fontWeight: 600 }}>
-              ALT <strong ref={altitudeDomRef}>74m</strong> • <strong ref={surfaceDomRef}>ASPHALT</strong>
-            </span>
-          </div>
-          <div
-            style={{
-              marginTop: '4px',
-              display: 'flex',
-              alignItems: 'baseline',
-              justifyContent: 'flex-end',
-              gap: '6px',
-            }}
-          >
-            <span
-              ref={speedDomRef}
-              style={{
-                fontSize: '38px',
-                fontWeight: 900,
-                lineHeight: 1,
-                fontVariantNumeric: 'tabular-nums',
-                color: activePreset.accentColor,
-              }}
-            >
-              0
-            </span>
-            <span style={{ fontSize: '13px', fontWeight: 700, color: '#a3b8b0' }}>km/h</span>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 };
 
-function teleportBtnStyle(accent: string): React.CSSProperties {
+const sectionHeaderStyle: React.CSSProperties = {
+  fontSize: '10.5px',
+  fontWeight: 800,
+  letterSpacing: '0.12em',
+  color: '#889e95',
+  marginBottom: '8px',
+};
+
+function journalBtnStyle(accent: string): React.CSSProperties {
   return {
-    background: 'rgba(20, 29, 27, 0.82)',
+    background: 'rgba(255, 255, 255, 0.05)',
     color: '#f4f1ea',
-    border: `1px solid ${accent}88`,
-    padding: '8px 12px',
-    borderRadius: '8px',
+    border: `1px solid ${accent}77`,
+    padding: '8px 14px',
+    borderRadius: '999px',
     fontSize: '12px',
     fontWeight: 600,
     cursor: 'pointer',
@@ -901,12 +933,12 @@ function teleportBtnStyle(accent: string): React.CSSProperties {
 
 function smallPillStyle(accent: string): React.CSSProperties {
   return {
-    background: 'rgba(20, 29, 27, 0.78)',
+    background: 'rgba(255, 255, 255, 0.05)',
     color: '#f4f1ea',
-    border: `1px solid ${accent}66`,
-    padding: '5px 10px',
-    borderRadius: '7px',
-    fontSize: '11px',
+    border: `1px solid ${accent}55`,
+    padding: '6px 12px',
+    borderRadius: '999px',
+    fontSize: '11.5px',
     fontWeight: 600,
     cursor: 'pointer',
   };

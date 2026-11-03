@@ -51,6 +51,7 @@ export const TriathlonCourse: React.FC = () => {
   useFrame((state, rawDelta) => {
     const dt = Math.min(rawDelta, 0.05);
     const p = mutablePhysics;
+    if (p.isPaused) return;
     const t = state.clock.elapsedTime;
     const mode = useGameStore.getState().mode;
 

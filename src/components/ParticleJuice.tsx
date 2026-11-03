@@ -114,6 +114,7 @@ export const ParticleJuice: React.FC = () => {
   useFrame((_, rawDelta) => {
     const dt = Math.min(rawDelta, 0.05);
     const p = mutablePhysics;
+    if (p.isPaused) return;
     const t = timers.current;
 
     // --- 0. Check for Contextual Transition "Poof" Burst (Step 3.1) ---

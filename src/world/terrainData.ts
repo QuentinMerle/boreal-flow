@@ -534,6 +534,11 @@ function initForestAndRockObstacles() {
     const y = getTerrainHeightOnly(x, z);
 
     if (sCode === 0 && y > WATER_LEVEL + 1.5 && y < 172) {
+      // Strictly keep trees clear of road, singletrack & river corridors
+      if (findClosestSplineSample(asphaltSamples, x, z, 25).distSq < 6.8 * 6.8) continue;
+      if (findClosestSplineSample(dirtSamples, x, z, 25).distSq < 4.5 * 4.5) continue;
+      if (findClosestSplineSample(riverSamples, x, z, 25).distSq < 7.8 * 7.8) continue;
+
       const scale = 0.82 + ((i * 17) % 12) * 0.11;
       const scaleY = scale * (0.95 + (i % 5) * 0.08);
       const rotY = (i * 1.3) % (Math.PI * 2);
@@ -560,6 +565,11 @@ function initForestAndRockObstacles() {
     const y = getTerrainHeightOnly(x, z);
 
     if ((sCode === 0 || sCode === 3 || sCode === 4) && y > WATER_LEVEL + 0.25) {
+      // Strictly keep boulders off the asphalt road, dirt singletrack & whitewater river!
+      if (findClosestSplineSample(asphaltSamples, x, z, 25).distSq < 7.2 * 7.2) continue;
+      if (findClosestSplineSample(dirtSamples, x, z, 25).distSq < 5.2 * 5.2) continue;
+      if (findClosestSplineSample(riverSamples, x, z, 25).distSq < 8.2 * 8.2) continue;
+
       const sx = 0.6 + ((i * 13) % 9) * 0.18;
       const sy = sx * (0.6 + ((i * 7) % 5) * 0.12);
       const sz = sx * 0.9;

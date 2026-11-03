@@ -473,6 +473,18 @@ class BorealSoundscape {
     if (!this.initialized || !this.ctx) return;
     const p = mutablePhysics;
     const now = this.ctx.currentTime;
+
+    // Smoothly duck active vehicle/movement sounds when game is Paused
+    if (p.isPaused) {
+      if (this.windGain) this.windGain.gain.setTargetAtTime(0.03, now, 0.12);
+      if (this.rollGain) this.rollGain.gain.setTargetAtTime(0, now, 0.08);
+      if (this.urethaneOscGain) this.urethaneOscGain.gain.setTargetAtTime(0, now, 0.08);
+      if (this.driftGain) this.driftGain.gain.setTargetAtTime(0, now, 0.08);
+      if (this.waterGain) this.waterGain.gain.setTargetAtTime(0, now, 0.08);
+      if (this.zipGain) this.zipGain.gain.setTargetAtTime(0, now, 0.08);
+      return;
+    }
+
     const speedRatio = THREE.MathUtils.clamp(p.speed / 32, 0, 1);
     const altRatio = THREE.MathUtils.clamp(p.position.y / 210, 0, 1);
 

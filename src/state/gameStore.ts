@@ -121,7 +121,8 @@ export interface MutablePhysicsState {
   // Phase 4.2: Non-Verbal Emote / Bell & Campfire Hub
   emoteTimer: number;
   emoteCounter: number;
-  // Session 2: Hybrid Camera & Gamepad
+  // Session 2: Hybrid Camera, Pause & Gamepad
+  isPaused: boolean;
   cameraMode: CameraMode;
   gamepadConnected: boolean;
   gamepadName: string;
@@ -164,6 +165,7 @@ export const mutablePhysics: MutablePhysicsState = {
   scanProgress: 0,
   emoteTimer: 0,
   emoteCounter: 0,
+  isPaused: false,
   cameraMode: 'DIORAMA',
   gamepadConnected: false,
   gamepadName: '',
@@ -196,6 +198,7 @@ export type SpawnLocation = 'SUMMIT_ROAD' | 'SUMMIT_TRAIL' | 'LAKE_SHORE' | 'FIR
 
 interface GameUIState {
   mode: MovementMode;
+  isPaused: boolean;
   spawnCounter: number;
   spawnTarget: SpawnLocation;
   timeCyclePaused: boolean;
@@ -211,6 +214,8 @@ interface GameUIState {
   triathlonVehicles: MovementMode[];
   triathlonPB: number;
   setMode: (mode: MovementMode, withPoof?: boolean) => void;
+  togglePause: () => void;
+  setPaused: (paused: boolean) => void;
   respawnAt: (target: SpawnLocation, defaultMode?: MovementMode) => void;
   setTimePreset: (preset: TimePreset) => void;
   toggleTimePause: () => void;
@@ -236,6 +241,7 @@ export const TIME_PRESET_HOURS: Record<TimePreset, number> = {
 
 export const useGameStore = create<GameUIState>((set) => ({
   mode: 'LONGBOARD',
+  isPaused: false,
   spawnCounter: 0,
   spawnTarget: 'SUMMIT_ROAD',
   timeCyclePaused: false,
@@ -267,8 +273,19 @@ export const useGameStore = create<GameUIState>((set) => ({
         triathlonVehicles: [...mutablePhysics.triathlonVehicles],
       };
     }),
+  togglePause: () =>
+    set((state) => {
+      const next = !state.isPaused;
+      mutablePhysics.isPaused = next;
+      return { isPaused: next };
+    }),
+  setPaused: (paused) => {
+    mutablePhysics.isPaused = paused;
+    set({ isPaused: paused });
+  },
   respawnAt: (target, defaultMode) =>
     set((state) => {
+      mutablePhysics.isPaused = false;
       mutablePhysics.specialState = target === 'CAMPFIRE_HUB' ? 'CAMPFIRE' : 'NONE';
       if (target === 'SUMMIT_ROAD' || target === 'SUMMIT_TRAIL') {
         mutablePhysics.triathlonStatus = 'IDLE';
@@ -277,6 +294,7 @@ export const useGameStore = create<GameUIState>((set) => ({
         mutablePhysics.triathlonBadge = 'NONE';
       }
       return {
+        isPaused: false,
         spawnTarget: target,
         spawnCounter: state.spawnCounter + 1,
         mode: defaultMode ?? state.mode,
