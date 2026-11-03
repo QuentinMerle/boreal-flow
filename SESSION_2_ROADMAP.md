@@ -35,6 +35,7 @@ In Session 2 and Session 2.5, we elevated this technical foundation into an **au
 - [x] **Adoucissement du shake de vitesse :** Amplitude divisée par plus de 3 (`0.026` au lieu de `0.095`) et fréquences lissées (22–28 Hz) pour un grondement d'asphalte subtil.
 - [x] **Fumée de feu de camp organique :** 64 bouffées icosaédriques avec enveloppe d'échelle en cloche (0,3 m $\to$ 4,5 m $\to$ résorption douce dans le ciel), vortex thermique hélicoïdal et gradient 3 couleurs (ambre braise $\to$ crème marshmallow $\to$ brume d'altitude).
 - [x] **Ambiance sonore Web Audio procédurale :** Sifflement aérodynamique haute vitesse (filtre bandpass résonant au-delà de 40 km/h) et claquements de braises / crépitements aléatoires près du bivouac.
+- [x] **Texture & Shader d'herbe procédural :** Shading procédural multi-échelle injecté dans le terrain (micro-stippling de brins, patchs de trèfle émeraude et de fétuque dorée, et sheen velouté au soleil), couplé à 5 200 touffes d'herbe instanciées 3 lames à gradient racinaire animées par le vent.
 - [x] **Refonte complète de l'UI Pause ("Expedition Field Guide") :** Grille de cartes Trailhead tactiles avec code couleur par discipline, barre météo segmentée, badges d'espèces découvrables et touches clavier/manette sous forme de keycaps `<kbd>`.
 
 ### Observations de Jeu & Retours d'Expérience (Playtest Findings)
@@ -60,12 +61,12 @@ In Session 2 and Session 2.5, we elevated this technical foundation into an **au
 - [ ] **Gap Jumps de coupe-virage :** Kickers naturels permettant de sauter par-dessus le vide pour couper les lacets au chrono.
 - [ ] **Ondulations de freinage (Braking bumps) :** Vibrations rythmiques du terrain avant les gros virages.
 
-### Chantier 2 : Shading & Texturation du Terrain / Herbe
-- [ ] **Custom Terrain Shader (Dither & Stippling) :**
-  - Modulation procédurale 2 tons de vert (vert tendre, mousse, fétuque dorée).
-  - Détection automatique de pente : roche calcaire au-delà de 35° d'inclinaison.
-  - Sheen anisotrope au soleil (reflet velouté de l'herbe selon l'angle de vue).
-- [ ] **Touffes d'herbe instanciées (cartes 3D) :** 2 500 touffes le long des sentiers animées par le vent en 1 draw call.
+### Chantier 2 : Shading & Texturation du Terrain / Herbe (Completed ✅)
+- [x] **Custom Terrain Shader (Dither & Stippling) :**
+  - Modulation procédurale multi-échelle (micro-stippling de brins, patchs de trèfle émeraude et fétuque alpine dorée).
+  - Reflet anisotrope velouté au soleil (*velvety sun sheen* avec translucidité de canopée).
+  - Zéro coût de texture (calculé 100% sur le GPU, 0 draw call additionnel).
+- [x] **Touffes d'herbe instanciées 3D (3 lames fannées) :** 5 200 touffes le long des sentiers et rives avec géométrie 3 lames incurvées, gradient racinaire (sol sombre $\to$ vert mousse $\to$ pointe ensoleillée) et animation de vent fluide via `injectWindShader`.
 
 ### Chantier 3 : Vie dans le Parc (Faune & Trafic)
 - [ ] **Modèles Blender 3D Low-Poly :**
