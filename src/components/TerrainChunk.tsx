@@ -400,15 +400,13 @@ export const TerrainChunk: React.FC = () => {
             `
             #include <color_fragment>
             float isRiverFrag = smoothstep(255.0, 215.0, vWaterWorldPos.z);
-            float flowZ = vWaterWorldPos.z * mix(0.55, 0.85, isRiverFrag) - uTime * mix(1.8, 9.5, isRiverFrag);
-            float r1 = sin(vWaterWorldPos.x * 1.45 + flowZ + sin(vWaterWorldPos.z * 0.4 + uTime * 2.0));
-            float r2 = cos(vWaterWorldPos.x * 2.35 - flowZ * 1.3 + cos(vWaterWorldPos.x * 0.6 - uTime * 1.7));
-            float caustic = smoothstep(0.35, 0.92, (r1 + r2) * 0.5);
-            float foamStreak = smoothstep(0.68, 0.95, sin(vWaterWorldPos.x * 3.1 + flowZ * 1.4) * cos(vWaterWorldPos.x * 1.8 - flowZ * 0.8));
-            vec3 shimmerCol = vec3(0.36, 0.84, 0.90);
-            vec3 foamCol = vec3(0.93, 0.99, 0.98);
-            diffuseColor.rgb = mix(diffuseColor.rgb, shimmerCol, caustic * 0.28);
-            diffuseColor.rgb = mix(diffuseColor.rgb, foamCol, foamStreak * mix(0.18, 0.52, isRiverFrag));
+            // Smooth longitudinal current ribbons (stretched along Z, zero polka dots!)
+            float warpX = vWaterWorldPos.x + sin(vWaterWorldPos.z * 0.08 - uTime * 1.4) * 1.2;
+            float ribbon1 = sin(warpX * 1.6 + vWaterWorldPos.z * 0.11 - uTime * mix(0.8, 3.8, isRiverFrag));
+            float ribbon2 = cos(warpX * 2.7 - vWaterWorldPos.z * 0.16 + uTime * mix(0.6, 3.1, isRiverFrag));
+            float streamBand = smoothstep(0.45, 0.95, (ribbon1 + ribbon2) * 0.5);
+            vec3 shimmerCol = vec3(0.32, 0.78, 0.86);
+            diffuseColor.rgb = mix(diffuseColor.rgb, shimmerCol, streamBand * 0.18);
             `
           )
           .replace(
@@ -416,9 +414,9 @@ export const TerrainChunk: React.FC = () => {
             `
             #include <normal_fragment_maps>
             float isRiverNorm = smoothstep(255.0, 215.0, vWaterWorldPos.z);
-            float nFlow = vWaterWorldPos.z * 0.75 - uTime * mix(2.2, 9.5, isRiverNorm);
-            float nxRipple = cos(vWaterWorldPos.x * 1.8 + nFlow) * 0.16 + sin(vWaterWorldPos.x * 3.2 - nFlow * 1.3) * 0.09;
-            float nzRipple = sin(vWaterWorldPos.z * 1.6 + nFlow) * 0.16 + cos(vWaterWorldPos.x * 2.1 + nFlow * 1.1) * 0.09;
+            float nFlow = vWaterWorldPos.z * 0.35 - uTime * mix(1.6, 6.5, isRiverNorm);
+            float nxRipple = cos(vWaterWorldPos.x * 1.2 + nFlow) * 0.12 + sin(vWaterWorldPos.x * 2.1 - nFlow * 0.8) * 0.06;
+            float nzRipple = sin(vWaterWorldPos.z * 0.9 + nFlow) * 0.12 + cos(vWaterWorldPos.x * 1.4 + nFlow * 0.7) * 0.06;
             normal = normalize(normal + vec3(nxRipple, 0.0, nzRipple));
             `
           );

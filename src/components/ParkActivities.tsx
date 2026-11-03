@@ -30,7 +30,7 @@ export const ParkActivities: React.FC = () => {
   const ringRefs = useRef<(THREE.Mesh | null)[]>([]);
   const { scene: bikeGltfScene } = useGLTF('/models/mountain_bike.glb');
   const { scene: boardGltfScene } = useGLTF('/models/longboard.glb');
-  const { scene: canoeGltfScene } = useGLTF('/models/canoe.glb?v=4');
+  const { scene: canoeGltfScene } = useGLTF('/models/canoe.glb?v=5');
   const parkedBikeScene = useMemo(() => {
     const cloned = bikeGltfScene.clone(true);
     cloned.traverse((c) => {

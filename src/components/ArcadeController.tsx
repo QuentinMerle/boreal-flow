@@ -1488,7 +1488,7 @@ useGLTF.preload('/models/mountain_bike.glb');
 const CanoeMesh: React.FC<{
   paddleRef: React.MutableRefObject<THREE.Object3D | null>;
 }> = ({ paddleRef }) => {
-  const { scene } = useGLTF('/models/canoe.glb?v=4');
+  const { scene } = useGLTF('/models/canoe.glb?v=5');
 
   const canoeScene = useMemo(() => {
     const cloned = scene.clone(true);
@@ -1509,4 +1509,4 @@ const CanoeMesh: React.FC<{
   return <primitive object={canoeScene} />;
 };
 
-useGLTF.preload('/models/canoe.glb?v=4');
+useGLTF.preload('/models/canoe.glb?v=5');
