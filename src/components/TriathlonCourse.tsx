@@ -47,6 +47,11 @@ export const TriathlonCourse: React.FC = () => {
   const finishZ = 460.0;
   const finishY = getTerrainHeightOnly(finishX, finishZ);
 
+  // Exact Campfire Stone Pit Coordinates matching TerrainChunk.tsx
+  const campX = CAMPFIRE_WORLD_POS.x;
+  const campZ = CAMPFIRE_WORLD_POS.z;
+  const campY = getTerrainHeightOnly(campX, campZ);
+
   // Pre-calculate randomized smoke offsets
   const smokeOffsets = useMemo(() => {
     return Array.from({ length: SMOKE_PUFF_COUNT }, (_, i) => ({
@@ -68,9 +73,6 @@ export const TriathlonCourse: React.FC = () => {
 
     // --- 1. ANIMATE RISING SMOKE PLUME (ZERO ALLOCATIONS) ---
     if (smokeMeshRef.current) {
-      const campX = CAMPFIRE_WORLD_POS.x;
-      const campY = CAMPFIRE_WORLD_POS.y;
-      const campZ = CAMPFIRE_WORLD_POS.z;
       const plumeHeight = 72.0;
 
       const isNight = p.nightFactor > 0.4;
@@ -85,13 +87,14 @@ export const TriathlonCourse: React.FC = () => {
         const progress = (t * 0.075 + off.phase) % 1.0;
 
         // Altitude: curves upward with accelerating hot thermal draft
-        const currY = campY + 0.45 + Math.pow(progress, 0.85) * plumeHeight;
+        const currY = campY + 0.42 + Math.pow(progress, 0.85) * plumeHeight;
 
         // Thermal convection vortex + gentle valley wind drift
+        // Swirl starts strictly at 0 at progress=0 so puffs originate exactly from the burning logs!
         const vortexAngle = t * 0.35 + off.phase * 6.28 + currY * 0.08;
-        const swirlRadius = (0.3 + Math.pow(progress, 0.9) * 3.6) * off.wobbleAmpX;
-        const windX = Math.sin(vortexAngle) * swirlRadius + progress * 2.5;
-        const windZ = Math.cos(vortexAngle) * swirlRadius + progress * 5.0;
+        const swirlRadius = Math.pow(progress, 0.95) * 3.6 * off.wobbleAmpX;
+        const windX = Math.sin(vortexAngle) * swirlRadius + Math.pow(progress, 1.35) * 2.2;
+        const windZ = Math.cos(vortexAngle) * swirlRadius + Math.pow(progress, 1.35) * 4.2;
 
         _smokeDummy.position.set(campX + windX, currY, campZ + windZ);
 
