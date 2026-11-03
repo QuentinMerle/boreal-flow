@@ -5,6 +5,7 @@ import { mutablePhysics, useGameStore } from '../state/gameStore';
 
 interface PaletteKeyframe {
   hour: number;
+  zenith: THREE.Color;
   sky: THREE.Color;
   fog: THREE.Color;
   fogDensity: number;
@@ -16,14 +17,14 @@ interface PaletteKeyframe {
   nightFactor: number;
 }
 
-// 4 Curated Canadian Wilderness Color Palettes with Lifted Ambient Ground Bounce
-// so charcoal asphalt (#222428) and shaded slopes never clip into pure black!
+// 4 Curated Canadian Wilderness Color Palettes with Zenith Sky Gradient & Lifted Ground Bounce
 const PALETTE_KEYFRAMES: PaletteKeyframe[] = [
   {
     hour: 0.0, // Deep Boreal Night
+    zenith: new THREE.Color('#050911'),
     sky: new THREE.Color('#0b1320'),
     fog: new THREE.Color('#0f1b2d'),
-    fogDensity: 0.0028,
+    fogDensity: 0.0022,
     sunColor: new THREE.Color('#7ca5d8'),
     sunIntensity: 0.65,
     hemiSky: new THREE.Color('#283e66'),
@@ -32,22 +33,24 @@ const PALETTE_KEYFRAMES: PaletteKeyframe[] = [
     nightFactor: 1.0,
   },
   {
-    hour: 6.2, // Misty Pink-Gold Dawn
+    hour: 6.2, // Misty Pink-Gold Dawn (Firewatch / Alto Gradient)
+    zenith: new THREE.Color('#5a5d80'),
     sky: new THREE.Color('#e8a598'),
-    fog: new THREE.Color('#df9a8c'),
-    fogDensity: 0.0027,
+    fog: new THREE.Color('#e29f8f'),
+    fogDensity: 0.0021,
     sunColor: new THREE.Color('#ffaa70'),
-    sunIntensity: 1.65,
+    sunIntensity: 1.75,
     hemiSky: new THREE.Color('#ffd8be'),
     hemiGround: new THREE.Color('#526e5c'),
-    hemiIntensity: 0.88,
+    hemiIntensity: 0.9,
     nightFactor: 0.15,
   },
   {
     hour: 12.5, // Crisp Canadian High Noon
+    zenith: new THREE.Color('#3b82b6'),
     sky: new THREE.Color('#8ecae6'),
-    fog: new THREE.Color('#b5dce8'),
-    fogDensity: 0.0019,
+    fog: new THREE.Color('#b8dfea'),
+    fogDensity: 0.0015,
     sunColor: new THREE.Color('#fff9eb'),
     sunIntensity: 2.35,
     hemiSky: new THREE.Color('#e6f6ff'),
@@ -56,22 +59,24 @@ const PALETTE_KEYFRAMES: PaletteKeyframe[] = [
     nightFactor: 0.0,
   },
   {
-    hour: 18.0, // Firewatch Golden Hour (Lifted warm ground bounce for rich shadow contrast)
+    hour: 18.0, // Firewatch Golden Hour (Deep violet-amber zenith to glowing peach horizon)
+    zenith: new THREE.Color('#6b4d6e'),
     sky: new THREE.Color('#e08e6d'),
-    fog: new THREE.Color('#d98a6c'),
-    fogDensity: 0.0025,
+    fog: new THREE.Color('#df8d6b'),
+    fogDensity: 0.0020,
     sunColor: new THREE.Color('#ff9b54'),
-    sunIntensity: 2.1,
+    sunIntensity: 2.15,
     hemiSky: new THREE.Color('#ffd2ba'),
     hemiGround: new THREE.Color('#5a6b5c'),
-    hemiIntensity: 0.94,
+    hemiIntensity: 0.95,
     nightFactor: 0.1,
   },
   {
     hour: 21.5, // Deep Blue Dusk -> Night
+    zenith: new THREE.Color('#050911'),
     sky: new THREE.Color('#0b1320'),
     fog: new THREE.Color('#0f1b2d'),
-    fogDensity: 0.0028,
+    fogDensity: 0.0022,
     sunColor: new THREE.Color('#7ca5d8'),
     sunIntensity: 0.65,
     hemiSky: new THREE.Color('#283e66'),
@@ -81,9 +86,10 @@ const PALETTE_KEYFRAMES: PaletteKeyframe[] = [
   },
   {
     hour: 24.0, // Wrap to 0.0
+    zenith: new THREE.Color('#050911'),
     sky: new THREE.Color('#0b1320'),
     fog: new THREE.Color('#0f1b2d'),
-    fogDensity: 0.0028,
+    fogDensity: 0.0022,
     sunColor: new THREE.Color('#7ca5d8'),
     sunIntensity: 0.65,
     hemiSky: new THREE.Color('#283e66'),
@@ -94,11 +100,67 @@ const PALETTE_KEYFRAMES: PaletteKeyframe[] = [
 ];
 
 // Scratch colors (ZERO allocations in useFrame)
+const _zenithCol = new THREE.Color();
 const _skyCol = new THREE.Color();
 const _fogCol = new THREE.Color();
 const _sunCol = new THREE.Color();
 const _hemiSky = new THREE.Color();
 const _hemiGround = new THREE.Color();
+
+/**
+ * Generates a 360-degree jagged low-poly mountain silhouette ring around the horizon.
+ * Sitting at 580m-920m out, these ranges naturally catch the exponential fog to create
+ * layered Firewatch / Alto's Odyssey horizon silhouettes!
+ */
+function createDistantMountainRingGeometry(
+  innerRadius: number,
+  outerRadius: number,
+  segments: number,
+  basePeakHeight: number,
+  seedOffset: number
+): THREE.BufferGeometry {
+  const positions: number[] = [];
+  const indices: number[] = [];
+
+  for (let i = 0; i <= segments; i++) {
+    const u = i / segments;
+    const angle = u * Math.PI * 2;
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+
+    // Multi-harmonic jagged Rocky Mountain ridge profile
+    const ridge1 = Math.abs(Math.sin(angle * 7.0 + seedOffset)) * 0.55;
+    const ridge2 = Math.abs(Math.cos(angle * 13.0 - seedOffset * 1.7)) * 0.3;
+    const ridge3 = Math.sin(angle * 23.0 + seedOffset * 3.1) * 0.15;
+    const valleyDip = Math.max(0.22, 0.65 + 0.35 * Math.cos(angle * 3.0 + seedOffset));
+    const peakY = -18 + (0.32 + ridge1 + ridge2 + ridge3) * basePeakHeight * valleyDip;
+
+    // 3 vertices per angular slice: Inner Base (y=-45), Ridge Peak (y=peakY), Outer Base (y=-45)
+    const midRadius = (innerRadius + outerRadius) * 0.5;
+    positions.push(
+      cosA * innerRadius, -45, sinA * innerRadius,
+      cosA * midRadius, peakY, sinA * midRadius,
+      cosA * outerRadius, -45, sinA * outerRadius
+    );
+
+    if (i < segments) {
+      const b = i * 3;
+      const n = (i + 1) * 3;
+      // Inner slope facing the player
+      indices.push(b, b + 1, n);
+      indices.push(b + 1, n + 1, n);
+      // Outer back-slope
+      indices.push(b + 1, b + 2, n + 1);
+      indices.push(b + 2, n + 2, n + 1);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
 
 export const DayNightAtmosphere: React.FC = () => {
   const { scene } = useThree();
@@ -108,7 +170,57 @@ export const DayNightAtmosphere: React.FC = () => {
   const hemiLightRef = useRef<THREE.HemisphereLight>(null);
   const fogRef = useRef<THREE.FogExp2>(null);
   const celestialGroupRef = useRef<THREE.Group>(null);
+  const skyDomeRef = useRef<THREE.Mesh>(null);
   const starsMatRef = useRef<THREE.PointsMaterial>(null);
+
+  // Custom Atmospheric Gradient Sky Dome Shader (Zero texture lookups, pure smooth gradient + sun glow)
+  const skyShaderMaterial = useMemo(() => {
+    return new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
+      uniforms: {
+        uZenithColor: { value: new THREE.Color('#6b4d6e') },
+        uHorizonColor: { value: new THREE.Color('#df8d6b') },
+        uSunColor: { value: new THREE.Color('#ff9b54') },
+        uSunDir: { value: new THREE.Vector3(0.5, 0.3, -0.5).normalize() },
+      },
+      vertexShader: `
+        varying vec3 vWorldDir;
+        void main() {
+          vWorldDir = normalize(position);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uZenithColor;
+        uniform vec3 uHorizonColor;
+        uniform vec3 uSunColor;
+        uniform vec3 uSunDir;
+        varying vec3 vWorldDir;
+        void main() {
+          float h = clamp(vWorldDir.y, 0.0, 1.0);
+          float horizonCurve = pow(h, 0.52);
+          vec3 col = mix(uHorizonColor, uZenithColor, horizonCurve);
+
+          // Soft atmospheric solar halo near sun direction
+          float sunDot = max(0.0, dot(normalize(vWorldDir), uSunDir));
+          float halo = pow(sunDot, 6.0) * 0.28 + pow(sunDot, 32.0) * 0.35;
+          col += uSunColor * halo * (1.0 - h * 0.65);
+
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `,
+    });
+  }, []);
+
+  // 2 Concentric Rings of Distant Firewatch Mountain Silhouettes
+  const { innerRangeGeo, outerRangeGeo } = useMemo(() => {
+    return {
+      innerRangeGeo: createDistantMountainRingGeometry(520, 680, 96, 195, 1.2),
+      outerRangeGeo: createDistantMountainRingGeometry(740, 940, 112, 295, 4.7),
+    };
+  }, []);
 
   const starPositions = useMemo(() => {
     const count = 450;
@@ -116,7 +228,7 @@ export const DayNightAtmosphere: React.FC = () => {
     for (let i = 0; i < count; i++) {
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(0.15 + Math.random() * 0.85);
-      const r = 380;
+      const r = 420;
       arr[i * 3] = r * Math.sin(phi) * Math.cos(theta);
       arr[i * 3 + 1] = r * Math.cos(phi);
       arr[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
@@ -147,6 +259,7 @@ export const DayNightAtmosphere: React.FC = () => {
     const span = Math.max(0.001, k1.hour - k0.hour);
     const alpha = THREE.MathUtils.smoothstep((h - k0.hour) / span, 0, 1);
 
+    _zenithCol.copy(k0.zenith).lerp(k1.zenith, alpha);
     _skyCol.copy(k0.sky).lerp(k1.sky, alpha);
     _fogCol.copy(k0.fog).lerp(k1.fog, alpha);
     _sunCol.copy(k0.sunColor).lerp(k1.sunColor, alpha);
@@ -162,9 +275,9 @@ export const DayNightAtmosphere: React.FC = () => {
     p.headlampOn = nightFactor > 0.35;
 
     if (scene.background instanceof THREE.Color) {
-      scene.background.copy(_skyCol);
+      scene.background.copy(_fogCol);
     } else {
-      scene.background = _skyCol.clone();
+      scene.background = _fogCol.clone();
     }
 
     if (fogRef.current) {
@@ -186,6 +299,18 @@ export const DayNightAtmosphere: React.FC = () => {
     const lightOffsetX = sunHoriz * 85;
     const lightOffsetY = activeElev * 115;
     const lightOffsetZ = -55;
+
+    // Update Sky Gradient Dome Uniforms & Position
+    skyShaderMaterial.uniforms.uZenithColor.value.copy(_zenithCol);
+    skyShaderMaterial.uniforms.uHorizonColor.value.copy(_fogCol);
+    skyShaderMaterial.uniforms.uSunColor.value.copy(_sunCol);
+    skyShaderMaterial.uniforms.uSunDir.value
+      .set(lightOffsetX, lightOffsetY, lightOffsetZ)
+      .normalize();
+
+    if (skyDomeRef.current) {
+      skyDomeRef.current.position.set(p.position.x, p.position.y, p.position.z);
+    }
 
     if (dirLightRef.current) {
       dirLightRef.current.color.copy(_sunCol);
@@ -211,13 +336,26 @@ export const DayNightAtmosphere: React.FC = () => {
 
   return (
     <>
-      <fogExp2 ref={fogRef} attach="fog" args={['#d98a6c', 0.0029]} />
-      <hemisphereLight ref={hemiLightRef} args={['#ffd2ba', '#5a6b5c', 0.94]} />
+      <fogExp2 ref={fogRef} attach="fog" args={['#df8d6b', 0.0020]} />
+      <hemisphereLight ref={hemiLightRef} args={['#ffd2ba', '#5a6b5c', 0.95]} />
+
+      {/* Atmospheric Gradient Sky Dome */}
+      <mesh ref={skyDomeRef} material={skyShaderMaterial} frustumCulled={false}>
+        <sphereGeometry args={[1250, 32, 20]} />
+      </mesh>
+
+      {/* Distant Horizon Mountain Ranges (Firewatch / Alto Layered Silhouettes) */}
+      <mesh geometry={innerRangeGeo} position={[0, 0, 0]} frustumCulled={false}>
+        <meshStandardMaterial color="#354f52" flatShading roughness={0.96} metalness={0.0} />
+      </mesh>
+      <mesh geometry={outerRangeGeo} position={[0, 0, 0]} frustumCulled={false}>
+        <meshStandardMaterial color="#283d42" flatShading roughness={0.98} metalness={0.0} />
+      </mesh>
 
       <directionalLight
         ref={dirLightRef}
         position={[65, 115, -240]}
-        intensity={2.1}
+        intensity={2.15}
         color="#ff9b54"
         castShadow
         shadow-mapSize-width={2048}
@@ -232,11 +370,11 @@ export const DayNightAtmosphere: React.FC = () => {
       />
 
       <group ref={celestialGroupRef}>
-        <mesh position={[280, 0, -180]}>
+        <mesh position={[320, 0, -210]}>
           <icosahedronGeometry args={[18, 1]} />
           <meshBasicMaterial color="#ffbe76" fog={false} />
         </mesh>
-        <mesh position={[-280, 0, -180]}>
+        <mesh position={[-320, 0, -210]}>
           <icosahedronGeometry args={[13, 1]} />
           <meshBasicMaterial color="#dbeafe" fog={false} />
         </mesh>

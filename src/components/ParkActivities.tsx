@@ -120,16 +120,68 @@ export const ParkActivities: React.FC = () => {
             <cylinderGeometry args={[0.12, 0.14, 2.2, 6]} />
             <meshStandardMaterial color="#6c462b" flatShading />
           </mesh>
-          {/* Crossbar */}
+          {/* Crossbar with pitched cedar roof cap */}
           <mesh castShadow position={[0, 1.95, 0]}>
             <boxGeometry args={[3.2, 0.28, 0.22]} />
             <meshStandardMaterial color={st.color} flatShading />
           </mesh>
-          {/* Parked Longboard / Bike / Canoe Indicator Prop */}
-          <mesh castShadow position={[0, 0.55, 0]} rotation={[0.25, 0.3, 0]}>
-            <boxGeometry args={[0.65, 0.75, 0.25]} />
-            <meshStandardMaterial color={st.color} flatShading />
+          <mesh castShadow position={[0, 2.15, 0]}>
+            <boxGeometry args={[3.5, 0.12, 0.55]} />
+            <meshStandardMaterial color="#5c3d22" flatShading />
           </mesh>
+
+          {/* Parked Equipment Prop (Longboard / Mountain Bike / Prospector Canoe) */}
+          {st.targetMode === 'LONGBOARD' && (
+            <group position={[0.3, 0.68, 0.22]} rotation={[0.22, 0.15, -0.18]}>
+              <mesh castShadow>
+                <boxGeometry args={[0.32, 0.06, 1.38]} />
+                <meshStandardMaterial color={st.color} flatShading />
+              </mesh>
+              <mesh castShadow position={[0, -0.06, -0.45]} rotation={[0, 0, Math.PI / 2]}>
+                <cylinderGeometry args={[0.07, 0.07, 0.38, 6]} />
+                <meshStandardMaterial color="#e2e8f0" flatShading />
+              </mesh>
+              <mesh castShadow position={[0, -0.06, 0.45]} rotation={[0, 0, Math.PI / 2]}>
+                <cylinderGeometry args={[0.07, 0.07, 0.38, 6]} />
+                <meshStandardMaterial color="#e2e8f0" flatShading />
+              </mesh>
+            </group>
+          )}
+          {st.targetMode === 'BIKE' && (
+            <group position={[0, 0.52, 0.25]} rotation={[0.1, 0.25, 0]}>
+              {/* Front & Rear Wheels */}
+              <mesh castShadow position={[-0.58, 0, 0]}>
+                <torusGeometry args={[0.36, 0.06, 6, 12]} />
+                <meshStandardMaterial color="#1e293b" flatShading />
+              </mesh>
+              <mesh castShadow position={[0.58, 0, 0]}>
+                <torusGeometry args={[0.36, 0.06, 6, 12]} />
+                <meshStandardMaterial color="#1e293b" flatShading />
+              </mesh>
+              {/* Diamond VTT Frame */}
+              <mesh castShadow position={[0, 0.24, 0]} rotation={[0, 0, 0.15]}>
+                <boxGeometry args={[1.05, 0.09, 0.08]} />
+                <meshStandardMaterial color={st.color} flatShading />
+              </mesh>
+              {/* Handlebars */}
+              <mesh castShadow position={[0.45, 0.55, 0]}>
+                <boxGeometry args={[0.1, 0.08, 0.62]} />
+                <meshStandardMaterial color="#cbd5e1" flatShading />
+              </mesh>
+            </group>
+          )}
+          {st.targetMode === 'CANOE' && (
+            <group position={[0, 0.28, 0.45]} rotation={[0, 0.35, 0]}>
+              <mesh castShadow>
+                <boxGeometry args={[0.78, 0.38, 2.35]} />
+                <meshStandardMaterial color={st.color} flatShading />
+              </mesh>
+              <mesh castShadow position={[0, 0.21, 0]}>
+                <boxGeometry args={[0.84, 0.06, 2.42]} />
+                <meshStandardMaterial color="#8c583a" flatShading />
+              </mesh>
+            </group>
+          )}
         </group>
       ))}
 

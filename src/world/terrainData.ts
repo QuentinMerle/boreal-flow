@@ -67,21 +67,23 @@ const asphaltSamples: SampledSplinePoint[] = [];
 const dirtSamples: SampledSplinePoint[] = [];
 const riverSamples: SampledSplinePoint[] = [];
 
-// Asymmetric Jump Kicker profile along the VTT Singletrack
-const KICKER_T_POSITIONS = [0.26, 0.48, 0.71, 0.89];
+// Pure C-2 analytical jump kickers along the VTT Singletrack (evaluated directly at world Z, zero discrete steps!)
+const KICKER_Z_CENTERS = [-290, -135, 25, 165];
 
-function evaluateKickerBoost(t: number): number {
+function evaluateAnalyticalDirtKicker(z: number): number {
   let boost = 0;
-  for (let i = 0; i < KICKER_T_POSITIONS.length; i++) {
-    const kt = KICKER_T_POSITIONS[i];
-    const diff = t - kt;
-    // Smooth approach ramp up (+1.25m peak), crisp lip on exit
-    if (diff > -0.024 && diff <= 0.003) {
-      const u = (diff + 0.024) / 0.024; // 0 to 1
-      boost += Math.pow(Math.sin(u * Math.PI * 0.5), 1.6) * 1.25;
-    } else if (diff > 0.003 && diff < 0.009) {
-      const u = 1.0 - (diff - 0.003) / 0.006;
-      boost += u * u * 1.25;
+  for (let i = 0; i < KICKER_Z_CENTERS.length; i++) {
+    const kz = KICKER_Z_CENTERS[i];
+    const dz = z - kz;
+    // Smooth 22m approach ramp (-18m to +4m) with a 0.95m crest
+    if (dz > -18.0 && dz <= 0.0) {
+      const u = (dz + 18.0) / 18.0; // 0 to 1
+      const s = u * u * (3 - 2 * u);
+      boost += s * 0.95;
+    } else if (dz > 0.0 && dz < 7.5) {
+      const u = 1.0 - dz / 7.5;
+      const s = u * u * (3 - 2 * u);
+      boost += s * 0.95;
     }
   }
   return boost;
@@ -135,12 +137,10 @@ function initSplineSamples() {
     asphaltCurve.getTangent(t, tan);
     asphaltSamples.push({ x: tmp.x, z: tmp.z, t, kickerBoost: 0, tx: tan.x, tz: tan.z });
 
-    // 2. Dirt Singletrack + Rollers + Jump Kickers
+    // 2. Dirt Singletrack
     dirtCurve.getPoint(t, tmp);
     dirtCurve.getTangent(t, tan);
-    const rollers = Math.sin(t * Math.PI * 38) * 0.35 * Math.sin(t * Math.PI);
-    const kicker = evaluateKickerBoost(t) + rollers;
-    dirtSamples.push({ x: tmp.x, z: tmp.z, t, kickerBoost: kicker, tx: tan.x, tz: tan.z });
+    dirtSamples.push({ x: tmp.x, z: tmp.z, t, kickerBoost: 0, tx: tan.x, tz: tan.z });
 
     // 3. Downhill Whitewater River
     riverCurve.getPoint(t, tmp);
@@ -213,30 +213,30 @@ function evaluatePoint(x: number, z: number): {
 
   const roadDist = Math.sqrt(roadHit.distSq);
   const dirtDist = Math.sqrt(dirtHit.distSq);
-  const closestDirtKicker = dirtHit.sample.kickerBoost;
   const riverDist = Math.sqrt(riverHit.distSq);
 
   // Carve the Downhill Mountain Whitewater River Channel (from Z = -282 down to Mirror Lake at Z = +252)
   const inRiverZone = z > -282 && z < 260 && riverDist < 22.0;
   if (inRiverZone) {
-    const canyonBlend = 1.0 - THREE.MathUtils.smoothstep(riverDist, 6.2, 22.0);
+    const canyonBlend = 1.0 - THREE.MathUtils.smoothstep(riverDist, 7.5, 22.0);
     // River bed follows the downhill mountain slope (-1.35m trough in center, +1.8m rocky banks)
     const riverBedH =
-      riverDist < 7.2
-        ? smoothSlopeH - 1.35 * Math.cos((riverDist / 7.2) * Math.PI * 0.45)
+      riverDist < 7.5
+        ? smoothSlopeH - 1.35 * Math.cos((riverDist / 7.5) * Math.PI * 0.4)
         : smoothSlopeH + 1.8;
     rawH = THREE.MathUtils.lerp(rawH, riverBedH, canyonBlend);
   }
 
-  // Dirt trail carving profile: uses pure analytical smoothSlopeH + closestDirtKicker
-  const dirtTargetElev = smoothSlopeH + 1.15 + closestDirtKicker;
-  const dirtFlatten = 1.0 - THREE.MathUtils.smoothstep(dirtDist, 2.6, 8.2);
-  const dirtCarve = dirtDist < 2.8 ? -0.12 * Math.cos((dirtDist / 2.8) * Math.PI * 0.5) : 0;
-  rawH = THREE.MathUtils.lerp(rawH, dirtTargetElev + dirtCarve, dirtFlatten);
+  // Dirt trail carving profile: wide 6.0m flat shelf + pure analytical kicker in Z
+  // (Guarantees all 4 corners of any bilinear grid cell under the bike are 100% free of mountain noise!)
+  const dirtTargetElev = smoothSlopeH + 1.15 + evaluateAnalyticalDirtKicker(z);
+  const dirtFlatten = 1.0 - THREE.MathUtils.smoothstep(dirtDist, 6.0, 13.0);
+  rawH = THREE.MathUtils.lerp(rawH, dirtTargetElev, dirtFlatten);
 
-  // Road flattening profile: uses pure analytical smoothSlopeH + 1.25 (ZERO discrete sample steps!)
+  // Road flattening profile: wide 8.2m flat shelf + pure analytical smoothSlopeH + 1.25
+  // (Guarantees all 4 corners of any bilinear grid cell on the road are 100% glass-smooth!)
   const roadTargetElev = smoothSlopeH + 1.25;
-  const roadFlatten = 1.0 - THREE.MathUtils.smoothstep(roadDist, 5.2, 14.0);
+  const roadFlatten = 1.0 - THREE.MathUtils.smoothstep(roadDist, 8.2, 16.5);
   rawH = THREE.MathUtils.lerp(rawH, roadTargetElev, roadFlatten);
 
   // Determine dominant surface code
@@ -469,6 +469,7 @@ export interface TreeObstacle {
   scaleY: number;
   rotY: number;
   radius: number;
+  variant: 'SPRUCE' | 'LARCH';
 }
 
 export interface RockObstacle {
@@ -539,12 +540,15 @@ function initForestAndRockObstacles() {
       if (findClosestSplineSample(dirtSamples, x, z, 25).distSq < 4.5 * 4.5) continue;
       if (findClosestSplineSample(riverSamples, x, z, 25).distSq < 7.8 * 7.8) continue;
 
-      const scale = 0.82 + ((i * 17) % 12) * 0.11;
-      const scaleY = scale * (0.95 + (i % 5) * 0.08);
+      const scale = 0.85 + ((i * 17) % 14) * 0.11;
+      const scaleY = scale * (1.05 + (i % 5) * 0.1);
       const rotY = (i * 1.3) % (Math.PI * 2);
       const radius = 0.42 * scale;
+      // ~20% Golden Autumn Larch / Birch trees clustered naturally via low-frequency noise
+      const larchNoise = simplex2D(x * 0.018 + 7, z * 0.018 - 13);
+      const variant: 'SPRUCE' | 'LARCH' = larchNoise > 0.42 || i % 7 === 0 ? 'LARCH' : 'SPRUCE';
 
-      FOREST_TREES.push({ x, y, z, scale, scaleY, rotY, radius });
+      FOREST_TREES.push({ x, y, z, scale, scaleY, rotY, radius, variant });
       spatialBuckets[getBucketIndex(x, z)].push({ x, z, radius, kind: 'TREE' });
     }
   }
@@ -656,4 +660,36 @@ export function queryObstacleCollision(
   }
 
   return _hitResult;
+}
+
+/**
+ * Evaluates soft Ground Ambient Occlusion (0.0 to 1.0) under trees and boulders
+ * using the O(1) spatial hash so terrain vertex colors have grounded contact shadows!
+ */
+export function computeCanopyAmbientOcclusion(x: number, z: number): number {
+  const baseCx = Math.floor((x + TERRAIN_WIDTH * 0.5) / HASH_CELL_SIZE);
+  const baseCz = Math.floor((z + TERRAIN_LENGTH * 0.5) / HASH_CELL_SIZE);
+  let ao = 0;
+
+  for (let dz = -1; dz <= 1; dz++) {
+    const cz = baseCz + dz;
+    if (cz < 0 || cz >= HASH_ROWS) continue;
+    for (let dx = -1; dx <= 1; dx++) {
+      const cx = baseCx + dx;
+      if (cx < 0 || cx >= HASH_COLS) continue;
+      const bucket = spatialBuckets[cz * HASH_COLS + cx];
+      for (let i = 0; i < bucket.length; i++) {
+        const obs = bucket[i];
+        const ox = x - obs.x;
+        const oz = z - obs.z;
+        const dSq = ox * ox + oz * oz;
+        const aoRadius = obs.kind === 'TREE' ? obs.radius * 6.2 : obs.radius * 2.8;
+        if (dSq < aoRadius * aoRadius) {
+          const falloff = 1.0 - Math.sqrt(dSq) / aoRadius;
+          ao = Math.max(ao, falloff * (obs.kind === 'TREE' ? 0.34 : 0.25));
+        }
+      }
+    }
+  }
+  return ao;
 }

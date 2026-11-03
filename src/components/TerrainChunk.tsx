@@ -16,6 +16,7 @@ import {
   FOREST_TREES,
   CANYON_ROCKS,
   getTerrainHeightOnly,
+  computeCanopyAmbientOcclusion,
 } from '../world/terrainData';
 import { simplex2D } from '../math/noise';
 import { mutablePhysics } from '../state/gameStore';
@@ -26,9 +27,11 @@ const PALETTE = {
   GRASS_WARM: new THREE.Color('#6b8e4e'),
   ROCK_LIGHT: new THREE.Color('#7a8288'),
   ROCK_DARK: new THREE.Color('#555d66'),
+  ROCK_STRATA: new THREE.Color('#444c54'),
   ALPINE_SNOW: new THREE.Color('#e8eff5'),
   SAND: new THREE.Color('#d2b48c'),
   LAKE_BED: new THREE.Color('#1c434d'),
+  AO_SHADOW: new THREE.Color('#182b23'),
 };
 
 // Shared uniform for GPU vertex shader wind & water sway (updated in useFrame, zero CPU overhead)
@@ -251,7 +254,13 @@ export const TerrainChunk: React.FC = () => {
         tmpColor.lerp(PALETTE.SAND, Math.max(sCode === 4 ? 0.75 : 0, sandBlend));
       } else if (ny < 0.82 || sCode === 3) {
         const rockBlend = THREE.MathUtils.clamp((0.82 - ny) / 0.22, 0, 1);
-        const rockCol = ny < 0.65 ? PALETTE.ROCK_DARK : PALETTE.ROCK_LIGHT;
+        const strata = Math.sin(cy * 0.65 + simplex2D(cx * 0.03, cz * 0.03) * 2.2);
+        const rockCol =
+          strata > 0.55
+            ? PALETTE.ROCK_STRATA
+            : ny < 0.65
+              ? PALETTE.ROCK_DARK
+              : PALETTE.ROCK_LIGHT;
         tmpColor.lerp(rockCol, Math.max(sCode === 3 ? 0.85 : 0, rockBlend));
       }
 
@@ -263,6 +272,12 @@ export const TerrainChunk: React.FC = () => {
           const snowT = THREE.MathUtils.smoothstep(cy + jitter * 180, 172, 202);
           tmpColor.lerp(PALETTE.ALPINE_SNOW, snowT * 0.82);
         }
+      }
+
+      // Baked Canopy & Boulder Ambient Occlusion (grounds every tree & rock into the terrain!)
+      const ao = computeCanopyAmbientOcclusion(cx, cz);
+      if (ao > 0.005) {
+        tmpColor.lerp(PALETTE.AO_SHADOW, ao);
       }
 
       tmpColor.offsetHSL(0, 0, jitter);
@@ -378,66 +393,12 @@ export const TerrainChunk: React.FC = () => {
     return { waterGeometry: geo, waterMaterial: mat };
   }, []);
 
-  // 4. Instanced roadside wooden bollards & trail markers
-  const { postMatrices, postColors } = useMemo(() => {
-    const matrices: THREE.Matrix4[] = [];
-    const colors: THREE.Color[] = [];
-    const dummy = new THREE.Object3D();
-    const pt = new THREE.Vector3();
-    const tangent = new THREE.Vector3();
-
-    const roadSteps = 120;
-    for (let i = 2; i < roadSteps - 2; i++) {
-      const t = i / roadSteps;
-      asphaltCurve.getPoint(t, pt);
-      asphaltCurve.getTangent(t, tangent);
-      const rightX = -tangent.z;
-      const rightZ = tangent.x;
-
-      for (const side of [-1, 1]) {
-        const px = pt.x + rightX * side * 5.3;
-        const pz = pt.z + rightZ * side * 5.3;
-        const py = getTerrainHeightOnly(px, pz);
-        if (py > WATER_LEVEL + 0.5) {
-          dummy.position.set(px, py + 0.45, pz);
-          dummy.rotation.set(0, Math.atan2(tangent.x, tangent.z), 0);
-          dummy.scale.set(0.22, 0.9, 0.22);
-          dummy.updateMatrix();
-          matrices.push(dummy.matrix.clone());
-          colors.push(new THREE.Color(i % 2 === 0 ? '#eb5e46' : '#e8dcc4'));
-        }
-      }
-    }
-
-    const dirtSteps = 105;
-    for (let i = 2; i < dirtSteps - 2; i += 2) {
-      const t = i / dirtSteps;
-      dirtCurve.getPoint(t, pt);
-      dirtCurve.getTangent(t, tangent);
-      const rightX = -tangent.z;
-      const rightZ = tangent.x;
-
-      const side = i % 4 === 0 ? 1 : -1;
-      const px = pt.x + rightX * side * 3.2;
-      const pz = pt.z + rightZ * side * 3.2;
-      const py = getTerrainHeightOnly(px, pz);
-      if (py > WATER_LEVEL + 0.5) {
-        dummy.position.set(px, py + 0.35, pz);
-        dummy.rotation.set(0, Math.atan2(tangent.x, tangent.z), 0);
-        dummy.scale.set(0.18, 0.7, 0.18);
-        dummy.updateMatrix();
-        matrices.push(dummy.matrix.clone());
-        colors.push(new THREE.Color('#52b788'));
-      }
-    }
-
-    return { postMatrices: matrices, postColors: colors };
-  }, []);
-
-  // 5. Instanced Foliage for 1,000m Map (1,250 Pines, 420 Mossy Rocks, 2,500 Lush Grass Tufts)
-  const { treeMatrices, rockMatrices, grassMatrices } = useMemo(() => {
-    const trees: THREE.Matrix4[] = [];
+  // 4. Instanced Foliage for 1,000m Map (Spruces, Golden Autumn Larches, Mossy Rocks, Understory Shrubs & Grass)
+  const { spruceMatrices, larchMatrices, rockMatrices, shrubMatrices, grassMatrices } = useMemo(() => {
+    const spruces: THREE.Matrix4[] = [];
+    const larches: THREE.Matrix4[] = [];
     const rocks: THREE.Matrix4[] = [];
+    const shrubs: THREE.Matrix4[] = [];
     const grass: THREE.Matrix4[] = [];
     const dummy = new THREE.Object3D();
     const cols = GRID_SEGMENTS_X + 1;
@@ -448,7 +409,11 @@ export const TerrainChunk: React.FC = () => {
       dummy.rotation.set(0, t.rotY, 0);
       dummy.scale.set(t.scale, t.scaleY, t.scale);
       dummy.updateMatrix();
-      trees.push(dummy.matrix.clone());
+      if (t.variant === 'LARCH') {
+        larches.push(dummy.matrix.clone());
+      } else {
+        spruces.push(dummy.matrix.clone());
+      }
     }
 
     for (let i = 0; i < CANYON_ROCKS.length; i++) {
@@ -458,6 +423,28 @@ export const TerrainChunk: React.FC = () => {
       dummy.scale.set(r.sx, r.sy, r.sz);
       dummy.updateMatrix();
       rocks.push(dummy.matrix.clone());
+    }
+
+    // Understory Low Shrubs / Berry Bushes
+    for (let i = 0; i < 650; i++) {
+      const rx = ((Math.sin(i * 157.3 + 13) * 43758.5453) % 1 + 1) % 1;
+      const rz = ((Math.sin(i * 311.7 + 71) * 43758.5453) % 1 + 1) % 1;
+      const x = (rx - 0.5) * (TERRAIN_WIDTH - 30);
+      const z = (rz - 0.5) * (TERRAIN_LENGTH - 40);
+
+      const gx = Math.round((x / TERRAIN_WIDTH + 0.5) * GRID_SEGMENTS_X);
+      const gz = Math.round((z / TERRAIN_LENGTH + 0.5) * GRID_SEGMENTS_Z);
+      const sCode = surfaceGrid[gz * cols + gx];
+      const y = getTerrainHeightOnly(x, z);
+
+      if (sCode === 0 && y > WATER_LEVEL + 1.2 && y < 162) {
+        const s = 0.65 + ((i * 17) % 9) * 0.09;
+        dummy.position.set(x, y + s * 0.32, z);
+        dummy.rotation.set(0, (i * 1.7) % (Math.PI * 2), 0);
+        dummy.scale.set(s * 1.15, s * 0.78, s);
+        dummy.updateMatrix();
+        shrubs.push(dummy.matrix.clone());
+      }
     }
 
     for (let i = 0; i < 2800; i++) {
@@ -481,7 +468,13 @@ export const TerrainChunk: React.FC = () => {
       }
     }
 
-    return { treeMatrices: trees, rockMatrices: rocks, grassMatrices: grass };
+    return {
+      spruceMatrices: spruces,
+      larchMatrices: larches,
+      rockMatrices: rocks,
+      shrubMatrices: shrubs,
+      grassMatrices: grass,
+    };
   }, []);
 
   useFrame((state) => {
@@ -650,65 +643,136 @@ export const TerrainChunk: React.FC = () => {
         </group>
       </group>
 
-      {/* Instanced Roadside & Trailhead Markers */}
-      <InstancedPosts matrices={postMatrices} colors={postColors} />
-
-      {/* Instanced Pines, Boulders & Grass with GPU Wind Sway */}
-      <InstancedPines matrices={treeMatrices} />
+      {/* Instanced Boreal Spruces, Golden Autumn Larches, Boulders, Shrubs & Grass with GPU Wind Sway */}
+      <InstancedPines matrices={spruceMatrices} />
+      <InstancedLarches matrices={larchMatrices} />
       <InstancedRocks matrices={rockMatrices} />
+      <InstancedShrubs matrices={shrubMatrices} />
       <InstancedGrass matrices={grassMatrices} />
     </group>
-  );
-};
-
-const InstancedPosts: React.FC<{ matrices: THREE.Matrix4[]; colors: THREE.Color[] }> = ({
-  matrices,
-  colors,
-}) => {
-  const meshRef = useRef<THREE.InstancedMesh>(null);
-
-  React.useLayoutEffect(() => {
-    const mesh = meshRef.current;
-    if (!mesh) return;
-    for (let i = 0; i < matrices.length; i++) {
-      mesh.setMatrixAt(i, matrices[i]);
-      mesh.setColorAt(i, colors[i]);
-    }
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    mesh.computeBoundingSphere();
-  }, [matrices, colors]);
-
-  return (
-    <instancedMesh ref={meshRef} args={[undefined, undefined, matrices.length]} castShadow receiveShadow>
-      <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial flatShading roughness={0.88} />
-    </instancedMesh>
   );
 };
 
 const InstancedPines: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) => {
   const trunkRef = useRef<THREE.InstancedMesh>(null);
   const lowerTierRef = useRef<THREE.InstancedMesh>(null);
+  const midTierRef = useRef<THREE.InstancedMesh>(null);
   const upperTierRef = useRef<THREE.InstancedMesh>(null);
 
-  const pineMaterial = useMemo(() => {
+  const pineLowerMat = useMemo(() => {
     const mat = new THREE.MeshStandardMaterial({
-      color: '#274c3c',
+      color: '#224436',
       flatShading: true,
       roughness: 0.9,
     });
-    mat.onBeforeCompile = (shader) => injectWindShader(shader, 0.085);
+    mat.onBeforeCompile = (shader) => injectWindShader(shader, 0.075);
+    return mat;
+  }, []);
+
+  const pineMidMat = useMemo(() => {
+    const mat = new THREE.MeshStandardMaterial({
+      color: '#2c5543',
+      flatShading: true,
+      roughness: 0.89,
+    });
+    mat.onBeforeCompile = (shader) => injectWindShader(shader, 0.11);
     return mat;
   }, []);
 
   const pineTopMaterial = useMemo(() => {
     const mat = new THREE.MeshStandardMaterial({
-      color: '#34624e',
+      color: '#376752',
       flatShading: true,
       roughness: 0.88,
     });
-    mat.onBeforeCompile = (shader) => injectWindShader(shader, 0.135);
+    mat.onBeforeCompile = (shader) => injectWindShader(shader, 0.145);
+    return mat;
+  }, []);
+
+  React.useLayoutEffect(() => {
+    if (!trunkRef.current || !lowerTierRef.current || !midTierRef.current || !upperTierRef.current) return;
+    const matLower = new THREE.Matrix4();
+    const matMid = new THREE.Matrix4();
+    const matUpper = new THREE.Matrix4();
+    const offsetLower = new THREE.Matrix4().makeTranslation(0, 2.7, 0);
+    const offsetMid = new THREE.Matrix4().makeTranslation(0, 4.4, 0);
+    const offsetUpper = new THREE.Matrix4().makeTranslation(0, 6.0, 0);
+
+    for (let i = 0; i < matrices.length; i++) {
+      trunkRef.current.setMatrixAt(i, matrices[i]);
+      matLower.multiplyMatrices(matrices[i], offsetLower);
+      lowerTierRef.current.setMatrixAt(i, matLower);
+      matMid.multiplyMatrices(matrices[i], offsetMid);
+      midTierRef.current.setMatrixAt(i, matMid);
+      matUpper.multiplyMatrices(matrices[i], offsetUpper);
+      upperTierRef.current.setMatrixAt(i, matUpper);
+    }
+    trunkRef.current.instanceMatrix.needsUpdate = true;
+    lowerTierRef.current.instanceMatrix.needsUpdate = true;
+    midTierRef.current.instanceMatrix.needsUpdate = true;
+    upperTierRef.current.instanceMatrix.needsUpdate = true;
+    trunkRef.current.computeBoundingSphere();
+    lowerTierRef.current.computeBoundingSphere();
+    midTierRef.current.computeBoundingSphere();
+    upperTierRef.current.computeBoundingSphere();
+  }, [matrices]);
+
+  return (
+    <group>
+      <instancedMesh ref={trunkRef} args={[undefined, undefined, matrices.length]} castShadow>
+        <cylinderGeometry args={[0.18, 0.32, 2.2, 5]} />
+        <meshStandardMaterial color="#5c4028" flatShading roughness={0.92} />
+      </instancedMesh>
+      <instancedMesh
+        ref={lowerTierRef}
+        args={[undefined, pineLowerMat, matrices.length]}
+        castShadow
+        receiveShadow
+      >
+        <coneGeometry args={[2.0, 3.4, 6]} />
+      </instancedMesh>
+      <instancedMesh
+        ref={midTierRef}
+        args={[undefined, pineMidMat, matrices.length]}
+        castShadow
+        receiveShadow
+      >
+        <coneGeometry args={[1.55, 3.0, 6]} />
+      </instancedMesh>
+      <instancedMesh
+        ref={upperTierRef}
+        args={[undefined, pineTopMaterial, matrices.length]}
+        castShadow
+        receiveShadow
+      >
+        <coneGeometry args={[1.08, 2.6, 6]} />
+      </instancedMesh>
+    </group>
+  );
+};
+
+const InstancedLarches: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) => {
+  const trunkRef = useRef<THREE.InstancedMesh>(null);
+  const lowerTierRef = useRef<THREE.InstancedMesh>(null);
+  const upperTierRef = useRef<THREE.InstancedMesh>(null);
+
+  const larchLowerMat = useMemo(() => {
+    const mat = new THREE.MeshStandardMaterial({
+      color: '#cf8228',
+      flatShading: true,
+      roughness: 0.88,
+    });
+    mat.onBeforeCompile = (shader) => injectWindShader(shader, 0.095);
+    return mat;
+  }, []);
+
+  const larchTopMat = useMemo(() => {
+    const mat = new THREE.MeshStandardMaterial({
+      color: '#e5a93c',
+      flatShading: true,
+      roughness: 0.86,
+    });
+    mat.onBeforeCompile = (shader) => injectWindShader(shader, 0.15);
     return mat;
   }, []);
 
@@ -716,8 +780,8 @@ const InstancedPines: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
     if (!trunkRef.current || !lowerTierRef.current || !upperTierRef.current) return;
     const matLower = new THREE.Matrix4();
     const matUpper = new THREE.Matrix4();
-    const offsetLower = new THREE.Matrix4().makeTranslation(0, 3.1, 0);
-    const offsetUpper = new THREE.Matrix4().makeTranslation(0, 5.2, 0);
+    const offsetLower = new THREE.Matrix4().makeTranslation(0, 3.0, 0);
+    const offsetUpper = new THREE.Matrix4().makeTranslation(0, 5.0, 0);
 
     for (let i = 0; i < matrices.length; i++) {
       trunkRef.current.setMatrixAt(i, matrices[i]);
@@ -737,26 +801,58 @@ const InstancedPines: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
   return (
     <group>
       <instancedMesh ref={trunkRef} args={[undefined, undefined, matrices.length]} castShadow>
-        <cylinderGeometry args={[0.2, 0.34, 2.2, 5]} />
-        <meshStandardMaterial color="#5c4028" flatShading roughness={0.92} />
+        <cylinderGeometry args={[0.16, 0.28, 2.3, 5]} />
+        <meshStandardMaterial color="#d2cabe" flatShading roughness={0.9} />
       </instancedMesh>
       <instancedMesh
         ref={lowerTierRef}
-        args={[undefined, pineMaterial, matrices.length]}
+        args={[undefined, larchLowerMat, matrices.length]}
         castShadow
         receiveShadow
       >
-        <coneGeometry args={[1.95, 4.2, 6]} />
+        <coneGeometry args={[1.75, 3.8, 6]} />
       </instancedMesh>
       <instancedMesh
         ref={upperTierRef}
-        args={[undefined, pineTopMaterial, matrices.length]}
+        args={[undefined, larchTopMat, matrices.length]}
         castShadow
         receiveShadow
       >
-        <coneGeometry args={[1.45, 3.6, 6]} />
+        <coneGeometry args={[1.25, 3.2, 6]} />
       </instancedMesh>
     </group>
+  );
+};
+
+const InstancedShrubs: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) => {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+
+  const shrubMat = useMemo(() => {
+    const mat = new THREE.MeshStandardMaterial({
+      flatShading: true,
+      roughness: 0.9,
+    });
+    mat.onBeforeCompile = (shader) => injectWindShader(shader, 0.14);
+    return mat;
+  }, []);
+
+  React.useLayoutEffect(() => {
+    if (!meshRef.current) return;
+    const col = new THREE.Color();
+    for (let i = 0; i < matrices.length; i++) {
+      meshRef.current.setMatrixAt(i, matrices[i]);
+      col.set(i % 4 === 0 ? '#9e5834' : i % 2 === 0 ? '#3f6b47' : '#537d4a');
+      meshRef.current.setColorAt(i, col);
+    }
+    meshRef.current.instanceMatrix.needsUpdate = true;
+    if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
+    meshRef.current.computeBoundingSphere();
+  }, [matrices]);
+
+  return (
+    <instancedMesh ref={meshRef} args={[undefined, shrubMat, matrices.length]} castShadow receiveShadow>
+      <dodecahedronGeometry args={[0.75, 0]} />
+    </instancedMesh>
   );
 };
 

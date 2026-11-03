@@ -37,6 +37,7 @@ import { soundscape } from '../audio/soundscape';
 
 // Module-scope scratch vectors (ZERO allocations inside useFrame)
 const _groundNormal = new THREE.Vector3(0, 1, 0);
+const _smoothGroundNormal = new THREE.Vector3(0, 1, 0);
 const _forward = new THREE.Vector3(0, 0, 1);
 const _right = new THREE.Vector3(1, 0, 0);
 const _slopeDown = new THREE.Vector3();
@@ -128,6 +129,7 @@ export const ArcadeController: React.FC = () => {
     carveYaw: 0,
     bounceY: 0,
     bounceVel: 0,
+    smoothSteer: 0,
     prevSteer: 0,
     hopCooldown: 0,
     crashCooldown: 0,
@@ -470,7 +472,11 @@ export const ArcadeController: React.FC = () => {
     }
 
     const keySteer = (inp.left ? 1 : 0) - (inp.right ? 1 : 0);
-    const steerInput = Math.abs(padSteer) > 0.04 ? padSteer : keySteer;
+    const rawSteerInput = Math.abs(padSteer) > 0.04 ? padSteer : keySteer;
+    // Progressive analog steering filter: eliminates robotic binary twitch on keyboard turns!
+    const steerDamp = Math.abs(rawSteerInput) < 0.05 ? 11.5 : 7.8;
+    sp.smoothSteer = THREE.MathUtils.damp(sp.smoothSteer, rawSteerInput, steerDamp, dt);
+    const steerInput = sp.smoothSteer;
 
     const keyMove = (inp.forward ? 1 : 0) - (inp.backward ? 1 : 0);
     const moveInput = Math.abs(padMove) > 0.08 ? padMove : keyMove;
@@ -569,7 +575,8 @@ export const ArcadeController: React.FC = () => {
     // --- STANDARD 4-STATE ARCADE SPHERE CONTROLLER ---
     else {
       const terrain = sampleTerrain(p.position.x, p.position.z, _groundNormal);
-      p.groundNormal.copy(_groundNormal);
+      _smoothGroundNormal.lerp(_groundNormal, Math.min(1, dt * 11.0)).normalize();
+      p.groundNormal.copy(_smoothGroundNormal);
       p.surface = terrain.surface;
       p.waterDepth = terrain.waterDepth;
 
@@ -587,14 +594,14 @@ export const ArcadeController: React.FC = () => {
       if (onTowerDeck) {
         effectiveGroundY = TOWER_BASE_Y + TOWER_DECK_HEIGHT + 0.22;
         _groundNormal.set(0, 1, 0);
+        _smoothGroundNormal.set(0, 1, 0);
         p.groundNormal.set(0, 1, 0);
       }
 
       const groundedThreshold = 0.28;
       p.isGrounded = p.position.y <= effectiveGroundY + groundedThreshold && p.velocity.y <= 1.5;
 
-      // 2. Steering & Speed-Dependent Turn Radius + Expressive Stand-Up Longboard Powerslides!
-      // Longboard powerslide triggers effortlessly when holding Shift / S (Brake) / Space / LT while turning!
+      // 2. Progressive Speed-Dependent Turn Curve + Expressive Stand-Up Longboard Powerslides!
       const wantsDrift =
         (mode === 'LONGBOARD' &&
           (inp.shiftDrift ||
@@ -602,8 +609,8 @@ export const ArcadeController: React.FC = () => {
             isBraking ||
             padBrake > 0.15 ||
             wantsHop) &&
-          Math.abs(steerInput) >= 0.18) ||
-        (mode === 'BIKE' && (inp.shiftDrift || padDriftBtn || isBraking) && Math.abs(steerInput) > 0.1);
+          Math.abs(rawSteerInput) >= 0.15) ||
+        (mode === 'BIKE' && (inp.shiftDrift || padDriftBtn || isBraking) && Math.abs(rawSteerInput) > 0.1);
 
       const wasDrifting = p.isDrifting;
       p.isDrifting = p.isGrounded && wantsDrift && p.speed > 4.2;
@@ -612,19 +619,18 @@ export const ArcadeController: React.FC = () => {
         triggerHaptic(pad, 65, 0.12, 0.32);
       }
 
-      // At high speeds (> 8 m/s), non-drifting turn radius stiffens with inertia!
-      // You must either brake before a hairpin OR throw a powerslide (driftTurnBoost) to whip around!
+      // Smooth, natural speed-dependent turn radius (never feels stiff or locked)
       let speedFactor = 1.0;
       if (mode === 'LONGBOARD' || mode === 'BIKE') {
-        const lowSpeedRamp = THREE.MathUtils.clamp(p.speed / 3.2, 0.72, 1.05);
-        const highSpeedStiffening = THREE.MathUtils.lerp(
+        const lowSpeedRamp = THREE.MathUtils.clamp(p.speed / 3.0, 0.78, 1.05);
+        const highSpeedCarve = THREE.MathUtils.lerp(
           1.05,
-          0.44,
-          THREE.MathUtils.clamp((p.speed - 8.5) / 23.0, 0, 1)
+          0.56,
+          THREE.MathUtils.clamp((p.speed - 11.0) / 26.0, 0, 1)
         );
-        speedFactor = p.speed < 8.5 ? lowSpeedRamp : highSpeedStiffening;
+        speedFactor = p.speed < 11.0 ? lowSpeedRamp : highSpeedCarve;
       }
-      const driftTurnBoost = p.isDrifting ? (mode === 'LONGBOARD' ? 2.38 : 2.15) : 1.0;
+      const driftTurnBoost = p.isDrifting ? (mode === 'LONGBOARD' ? 2.15 : 1.95) : 1.0;
       p.yaw += steerInput * preset.turnSpeed * speedFactor * driftTurnBoost * dt;
 
       _forward.set(Math.sin(p.yaw), 0, Math.cos(p.yaw)).normalize();
@@ -645,64 +651,62 @@ export const ArcadeController: React.FC = () => {
         sp.driftCharge = Math.max(0, sp.driftCharge - dt * 2.5);
       }
 
-      // 4. Slope Gravity Projection (Longboard Aero Tuck + Downhill Whitewater Kayak/Canoe!)
-      _slopeDown.set(_groundNormal.x, 0, _groundNormal.z);
+      // 4. Slope Gravity Projection (Uses smoothed normal so terrain cells never cause speed jitter!)
+      _slopeDown.set(_smoothGroundNormal.x, 0, _smoothGroundNormal.z);
       const slopeStrength = _slopeDown.length();
       p.slopeAngle = Math.asin(THREE.MathUtils.clamp(slopeStrength, 0, 1)) * (180 / Math.PI);
 
-      const isLongboardAeroTuck =
-        mode === 'LONGBOARD' && accelInput > 0.2 && forwardVel > 9.5 && !p.isDrifting;
+      const isAeroAttackTuck =
+        (mode === 'LONGBOARD' || mode === 'BIKE') &&
+        accelInput > 0.2 &&
+        forwardVel > 9.5 &&
+        !p.isDrifting;
 
       const isDownhillRiverCanoe = isOnWater && mode === 'CANOE' && p.position.z < 245;
       if (p.isGrounded && (!isOnWater || isDownhillRiverCanoe) && !onTowerDeck && mode !== 'WALK') {
         const downhillDot = _slopeDown.dot(_forward);
-        const tuckGravityBoost = isLongboardAeroTuck && downhillDot > 0 ? 1.26 : 1.0;
+        const tuckGravityBoost = isAeroAttackTuck && downhillDot > 0 ? 1.28 : 1.0;
         const gravityAccel = 22.0 * preset.gravityScale * tuckGravityBoost;
         forwardVel += downhillDot * gravityAccel * dt;
-        lateralVel += _slopeDown.dot(_right) * gravityAccel * 0.45 * dt;
+        lateralVel += _slopeDown.dot(_right) * gravityAccel * 0.42 * dt;
       }
 
       // 5. Mode-Specific Authentic Propulsion (WP 3.5)
       if (mode === 'LONGBOARD') {
-        // Authentic Rhythmic Foot-Pushing below 12.0 m/s (~43 km/h); above that, rely on gravity, Aero Tuck & Carve Pumping!
+        // Authentic Rhythmic Foot-Pushing below 13.5 m/s (~48 km/h); above that, rely on gravity, Aero Tuck & Carve Pumping!
         if (
           accelInput > 0.15 &&
           p.isGrounded &&
           !p.isDrifting &&
-          forwardVel < 12.0 &&
+          forwardVel < 13.5 &&
           sp.pushTimer <= 0
         ) {
-          const pushKick = 3.4 * accelInput * (p.surface === 'ASPHALT' ? 1.0 : 0.45);
-          forwardVel = Math.min(12.8, forwardVel + pushKick);
-          sp.pushTimer = 0.56;
+          const pushKick = 3.5 * accelInput * (p.surface === 'ASPHALT' ? 1.0 : 0.55);
+          forwardVel = Math.min(14.2, forwardVel + pushKick);
+          sp.pushTimer = 0.54;
           sp.pushAnimTimer = 0.38;
           soundscape.triggerFootPushSound();
           triggerHaptic(pad, 55, 0.2, 0.25);
         }
 
         const steerDelta = Math.abs(steerInput - sp.prevSteer);
-        p.isPumping = p.isGrounded && !p.isDrifting && Math.abs(steerInput) > 0 && forwardVel > 3.0;
-        if (steerDelta > 0.5 && p.isGrounded && forwardVel > 2.5 && forwardVel < preset.maxSpeed) {
-          forwardVel += p.surface === 'ASPHALT' ? 1.25 : 0.4;
+        p.isPumping = p.isGrounded && !p.isDrifting && Math.abs(steerInput) > 0.12 && forwardVel > 3.0;
+        if (steerDelta > 0.18 && p.isGrounded && forwardVel > 2.5 && forwardVel < preset.maxSpeed) {
+          forwardVel += (p.surface === 'ASPHALT' ? 0.65 : 0.25) * steerDelta;
         }
         if (wantsHop && !p.isDrifting && p.isGrounded && sp.hopCooldown <= 0) {
           p.velocity.y = preset.hopImpulse;
           p.isGrounded = false;
           sp.hopCooldown = 0.45;
-          sp.bounceVel = 4.5;
+          sp.bounceVel = 3.2;
           soundscape.triggerHopSound();
           triggerHaptic(pad, 80, 0.4, 0.3);
         }
-        // Off-road urethane wheel chatter when skating on grass/dirt/rock
-        if (p.isGrounded && p.surface !== 'ASPHALT' && p.speed > 3.0) {
-          sp.bounceVel += Math.sin(elapsed * 34) * 0.55;
-          triggerHaptic(pad, 50, 0.15, 0.3);
-        }
       } else if (mode === 'BIKE') {
         p.isPumping = false;
-        // Pedaling torque is strongest up to 19.5 m/s (70 km/h); steeper downhill carries you up to 31 m/s
-        if (accelInput > 0 && forwardVel < 19.5) {
-          const pedalEfficiency = THREE.MathUtils.clamp(1.15 - forwardVel / 24.0, 0.28, 1.0);
+        // Unbridled VTT Pedaling + Downhill Freeride Torque up to 31 m/s (~75 km/h), gravity carries to 38 m/s (~91 km/h)!
+        if (accelInput > 0 && forwardVel < 31.0) {
+          const pedalEfficiency = THREE.MathUtils.clamp(1.22 - forwardVel / 34.0, 0.34, 1.0);
           forwardVel += preset.accelForce * pedalEfficiency * accelInput * dt;
         }
         sp.pedalPhase += Math.max(0, forwardVel) * dt * 0.85;
@@ -710,12 +714,9 @@ export const ArcadeController: React.FC = () => {
           p.velocity.y = preset.hopImpulse;
           p.isGrounded = false;
           sp.hopCooldown = 0.45;
-          sp.bounceVel = 6.0;
+          sp.bounceVel = 4.2;
           soundscape.triggerHopSound();
           triggerHaptic(pad, 90, 0.55, 0.35);
-        }
-        if (p.isGrounded && p.surface === 'DIRT' && p.speed > 4) {
-          sp.bounceVel += Math.sin(p.position.z * 1.8) * 0.35;
         }
       } else if (mode === 'CANOE') {
         p.isPumping = false;
@@ -765,21 +766,25 @@ export const ArcadeController: React.FC = () => {
       let surfaceDragMultiplier = 1.0;
       if (mode === 'LONGBOARD') {
         if (p.surface === 'ASPHALT') {
-          surfaceDragMultiplier = isLongboardAeroTuck ? 0.36 : 0.62;
+          surfaceDragMultiplier = isAeroAttackTuck ? 0.34 : 0.56;
         } else if (p.surface === 'DIRT') {
-          surfaceDragMultiplier = 3.2;
+          surfaceDragMultiplier = 2.4;
         } else if (p.surface === 'GRASS' || p.surface === 'SAND' || p.surface === 'ROCK') {
-          surfaceDragMultiplier = 6.8;
+          surfaceDragMultiplier = 5.2;
         } else if (p.surface === 'WATER') {
-          surfaceDragMultiplier = 9.5;
+          surfaceDragMultiplier = 9.0;
         }
       } else if (mode === 'BIKE') {
-        if (p.surface === 'DIRT' || p.surface === 'ASPHALT') surfaceDragMultiplier = 0.78;
-        else if (p.surface === 'GRASS' || p.surface === 'SAND' || p.surface === 'ROCK')
-          surfaceDragMultiplier = 1.95;
-        else if (p.surface === 'WATER') surfaceDragMultiplier = 6.5;
+        if (p.surface === 'DIRT' || p.surface === 'ASPHALT') {
+          surfaceDragMultiplier = isAeroAttackTuck ? 0.35 : 0.52;
+        } else if (p.surface === 'GRASS' || p.surface === 'SAND' || p.surface === 'ROCK') {
+          // VTT is built for freeride off-road: minimal speed loss on grass/rock!
+          surfaceDragMultiplier = 0.82;
+        } else if (p.surface === 'WATER') {
+          surfaceDragMultiplier = 5.5;
+        }
       } else if (mode === 'CANOE') {
-        surfaceDragMultiplier = isOnWater ? 0.65 : 6.5;
+        surfaceDragMultiplier = isOnWater ? 0.55 : 6.5;
       }
 
       const drag = preset.rollingResistance * surfaceDragMultiplier;
@@ -939,19 +944,31 @@ export const ArcadeController: React.FC = () => {
 
     // --- 8. EXPRESSIVE ARTICULATED CHARACTER RIG & PROPER RIGHT-HANDED BASIS ROTATION ---
     if (rootGroupRef.current && visualTiltRef.current) {
-      rootGroupRef.current.position.copy(p.position);
+      rootGroupRef.current.position.x = p.position.x;
+      rootGroupRef.current.position.z = p.position.z;
+      // Smooth vertical suspension filter when grounded so micro-gradients never cause visual jitter!
+      if (p.isGrounded && p.specialState === 'NONE') {
+        rootGroupRef.current.position.y = THREE.MathUtils.damp(
+          rootGroupRef.current.position.y,
+          p.position.y,
+          26.0,
+          dt
+        );
+      } else {
+        rootGroupRef.current.position.y = p.position.y;
+      }
 
       const effectiveNormal =
         p.specialState !== 'NONE' || (p.waterDepth > 0.2 && mode === 'CANOE' && p.position.z >= 245)
           ? _upVec
-          : _groundNormal;
+          : _smoothGroundNormal;
 
       // Proper Right-Handed Orthonormal Basis: X = Y x Z (det = +1)
       _slopeRight.crossVectors(effectiveNormal, _forward).normalize();
       _slopeForward.crossVectors(_slopeRight, effectiveNormal).normalize();
       _rotMatrix.makeBasis(_slopeRight, effectiveNormal, _slopeForward);
       _targetQuat.setFromRotationMatrix(_rotMatrix);
-      rootGroupRef.current.quaternion.slerp(_targetQuat, Math.min(1, dt * 16));
+      rootGroupRef.current.quaternion.slerp(_targetQuat, Math.min(1, dt * 12));
 
       const targetRoll =
         p.specialState === 'CAMPFIRE'
