@@ -129,42 +129,41 @@ function createDistantMountainRingGeometry(
     const cosA = Math.cos(angle);
     const sinA = Math.sin(angle);
 
-    // Smooth, natural Canadian Rocky Mountain ridge profile with soft saddles & organic crests
-    const h1 = Math.pow(0.5 + 0.5 * Math.sin(angle * 5.0 + seedOffset), 1.35) * 0.52;
-    const h2 = Math.pow(0.5 + 0.5 * Math.cos(angle * 11.0 - seedOffset * 1.7), 1.5) * 0.30;
+    // Multi-harmonic Rocky Mountain ridge profile with soft foothills and crisp low-poly peaks
+    const h1 = Math.pow(0.5 + 0.5 * Math.sin(angle * 6.0 + seedOffset), 1.3) * 0.52;
+    const h2 = Math.abs(Math.cos(angle * 11.0 - seedOffset * 1.7)) * 0.28;
     const h3 = (0.5 + 0.5 * Math.sin(angle * 19.0 + seedOffset * 2.9)) * 0.14;
-    const valleyDip = 0.62 + 0.38 * Math.cos(angle * 3.0 + seedOffset);
+    const valleyDip = 0.68 + 0.32 * Math.cos(angle * 3.0 + seedOffset);
 
-    // Open up a gentle wide lake-valley vista directly South behind Mirror Lake (sinA > 0.25)
-    // so the mountains frame the lake on both flanks and recede softly in the center!
-    const southLakeOpening =
-      isInnerRange && sinA > 0.2
-        ? 1.0 - THREE.MathUtils.smoothstep(sinA, 0.2, 0.96) * 0.52
-        : 1.0 - Math.max(0, sinA) * 0.18;
+    // Subtle saddle right behind the center of Mirror Lake (sinA > 0.5) so it cradles the lake without a flat wall
+    const lakeSaddle =
+      isInnerRange && sinA > 0.4
+        ? 1.0 - THREE.MathUtils.smoothstep(sinA, 0.4, 0.98) * 0.28
+        : 1.0;
 
-    const pushBackSouth = Math.max(0, sinA) * (isInnerRange ? 180 : 140);
-    const r0 = innerRadius + pushBackSouth * 0.7;
-    const r1 = THREE.MathUtils.lerp(innerRadius, outerRadius, 0.36) + pushBackSouth * 0.85;
-    const r2 = THREE.MathUtils.lerp(innerRadius, outerRadius, 0.72) + pushBackSouth;
-    const r3 = outerRadius + pushBackSouth;
+    // Anchor inner toe at r0 = innerRadius (480m) so it seamlessly meets the Z=+500 lake shore with ZERO sky gap!
+    const r0 = innerRadius;
+    const r1 = THREE.MathUtils.lerp(innerRadius, outerRadius, 0.34);
+    const r2 = THREE.MathUtils.lerp(innerRadius, outerRadius, 0.72);
+    const r3 = outerRadius;
 
     const peakY =
-      -12 + (0.24 + h1 + h2 + h3) * basePeakHeight * valleyDip * southLakeOpening;
-    const foothillWave = 0.34 + 0.14 * Math.sin(angle * 9.0 + seedOffset * 2.1);
-    const foothillY = THREE.MathUtils.lerp(-24, peakY, foothillWave);
+      14 + (0.28 + h1 + h2 + h3) * basePeakHeight * valleyDip * lakeSaddle;
+    const foothillWave = 0.36 + 0.14 * Math.sin(angle * 9.0 + seedOffset * 2.1);
+    const foothillY = THREE.MathUtils.lerp(12, peakY, foothillWave);
 
-    // 4 vertices per angular slice: Inner Toe -> Rolling Foothill -> Main Ridge Crest -> Outer Base
+    // 4 vertices per angular slice: Shoreline Toe (y=-15) -> Rolling Foothill -> Main Ridge Crest -> Outer Base
     positions.push(
-      cosA * r0, -38, sinA * r0,
+      cosA * r0, -15, sinA * r0,
       cosA * r1, foothillY, sinA * r1,
       cosA * r2, peakY, sinA * r2,
-      cosA * r3, -45, sinA * r3
+      cosA * r3, -35, sinA * r3
     );
 
     if (i < segments) {
       const b = i * 4;
       const n = (i + 1) * 4;
-      // Lower foothill slope
+      // Lower foothill slope cradling the lake
       indices.push(b, b + 1, n);
       indices.push(b + 1, n + 1, n);
       // Upper mountain face from foothill to peak
@@ -235,11 +234,11 @@ export const DayNightAtmosphere: React.FC = () => {
     });
   }, []);
 
-  // 2 Concentric Rings of Distant Firewatch Mountain Silhouettes (receded with gentle foothills)
+  // 2 Concentric Rings of Distant Firewatch Mountain Silhouettes (anchored at 480m so zero gap behind Mirror Lake!)
   const { innerRangeGeo, outerRangeGeo } = useMemo(() => {
     return {
-      innerRangeGeo: createDistantMountainRingGeometry(640, 1020, 160, 175, 1.2, true),
-      outerRangeGeo: createDistantMountainRingGeometry(960, 1440, 160, 275, 4.7, false),
+      innerRangeGeo: createDistantMountainRingGeometry(480, 740, 128, 175, 1.2, true),
+      outerRangeGeo: createDistantMountainRingGeometry(680, 960, 144, 265, 4.7, false),
     };
   }, []);
 
@@ -367,10 +366,10 @@ export const DayNightAtmosphere: React.FC = () => {
 
       {/* Distant Horizon Mountain Ranges (Firewatch / Alto Layered Silhouettes) */}
       <mesh geometry={innerRangeGeo} position={[0, 0, 0]} frustumCulled={false}>
-        <meshStandardMaterial color="#354f52" roughness={0.96} metalness={0.0} />
+        <meshStandardMaterial color="#354f52" flatShading roughness={0.96} metalness={0.0} />
       </mesh>
       <mesh geometry={outerRangeGeo} position={[0, 0, 0]} frustumCulled={false}>
-        <meshStandardMaterial color="#283d42" roughness={0.98} metalness={0.0} />
+        <meshStandardMaterial color="#283d42" flatShading roughness={0.98} metalness={0.0} />
       </mesh>
 
       <directionalLight
