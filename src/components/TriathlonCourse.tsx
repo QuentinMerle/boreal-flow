@@ -10,11 +10,22 @@ import {
 import { getTerrainHeightOnly } from '../world/terrainData';
 import { soundscape } from '../audio/soundscape';
 
-const SMOKE_PUFF_COUNT = 42;
+const SMOKE_PUFF_COUNT = 64;
 const _smokeDummy = new THREE.Object3D();
-const SMOKE_NIGHT_COL = new THREE.Color('#c5cdd8');
-const SMOKE_GOLDEN_COL = new THREE.Color('#fed7aa');
-const SMOKE_DAY_COL = new THREE.Color('#f4ede2');
+const _puffColor = new THREE.Color();
+
+// Stylized Boreal Smoke Color Palette
+const _baseEmberCol = new THREE.Color('#ffaa64'); // Warm golden amber glow near hearth
+const _cloudWhiteCol = new THREE.Color('#fdfcf7'); // Creamy marshmallow cloud
+const _highMistCol = new THREE.Color('#d2e0f0'); // Airy sky mist
+
+const _goldenEmberCol = new THREE.Color('#ff8f42');
+const _goldenCloudCol = new THREE.Color('#fed7aa');
+const _goldenMistCol = new THREE.Color('#cbd5e1');
+
+const _nightEmberCol = new THREE.Color('#ff6a33');
+const _nightCloudCol = new THREE.Color('#64748b');
+const _nightMistCol = new THREE.Color('#334155');
 
 /**
  * Step 3.1 & 3.2: Boreal Triathlon & Diegetic Zero-HUD Navigation (1,000m Canyon Map)
@@ -60,44 +71,74 @@ export const TriathlonCourse: React.FC = () => {
       const campX = CAMPFIRE_WORLD_POS.x;
       const campY = CAMPFIRE_WORLD_POS.y;
       const campZ = CAMPFIRE_WORLD_POS.z;
-      const plumeHeight = 68.0;
+      const plumeHeight = 72.0;
+
+      const isNight = p.nightFactor > 0.4;
+      const isGolden = !isNight && p.timeOfDay > 16.5 && p.timeOfDay < 19.5;
+
+      const emberCol = isNight ? _nightEmberCol : (isGolden ? _goldenEmberCol : _baseEmberCol);
+      const cloudCol = isNight ? _nightCloudCol : (isGolden ? _goldenCloudCol : _cloudWhiteCol);
+      const mistCol = isNight ? _nightMistCol : (isGolden ? _goldenMistCol : _highMistCol);
 
       for (let i = 0; i < SMOKE_PUFF_COUNT; i++) {
         const off = smokeOffsets[i];
-        const progress = (t * 0.085 + off.phase) % 1.0;
+        const progress = (t * 0.075 + off.phase) % 1.0;
 
-        // Altitude: curves upward accelerating slightly with hot air draft
-        const currY = campY + 0.4 + Math.pow(progress, 0.88) * plumeHeight;
+        // Altitude: curves upward with accelerating hot thermal draft
+        const currY = campY + 0.45 + Math.pow(progress, 0.85) * plumeHeight;
 
-        // Wind drift S-curve
-        const windX = Math.sin(t * off.wobbleSpeedX + currY * 0.11) * off.wobbleAmpX * (1 + progress * 3.8);
-        const windZ = Math.cos(t * off.wobbleSpeedZ + currY * 0.09) * off.wobbleAmpZ * (1 + progress * 3.0);
-        const driftLateral = progress * 7.5;
+        // Thermal convection vortex + gentle valley wind drift
+        const vortexAngle = t * 0.35 + off.phase * 6.28 + currY * 0.08;
+        const swirlRadius = (0.3 + Math.pow(progress, 0.9) * 3.6) * off.wobbleAmpX;
+        const windX = Math.sin(vortexAngle) * swirlRadius + progress * 2.5;
+        const windZ = Math.cos(vortexAngle) * swirlRadius + progress * 5.0;
 
-        _smokeDummy.position.set(campX + windX + driftLateral, currY, campZ + windZ);
+        _smokeDummy.position.set(campX + windX, currY, campZ + windZ);
 
-        // Scale expands as smoke billows into the air
-        const puffScale = THREE.MathUtils.lerp(0.5, 4.8, progress) * off.baseScale;
-        _smokeDummy.scale.set(puffScale, puffScale * 0.88, puffScale);
-        _smokeDummy.rotation.set(currY * 0.2, t * 0.15 + i, 0);
+        // Organic billowing scale envelope:
+        // Tiny at embers (0.35m) -> swells to expansive cumulus puff (4.8m) -> softly shrinks to 0 before disappearing!
+        const bellCurve = Math.sin(progress * Math.PI);
+        const swellFactor = Math.pow(bellCurve, 0.72);
+        const puffScale = (0.28 + swellFactor * 4.2) * off.baseScale;
+        const aspectY = 0.82 + swellFactor * 0.22;
+
+        _smokeDummy.scale.set(puffScale, puffScale * aspectY, puffScale * 1.04);
+        _smokeDummy.rotation.set(
+          currY * 0.15 + t * 0.1,
+          t * 0.18 + i * 0.45,
+          Math.sin(t * 0.25 + i) * 0.25
+        );
         _smokeDummy.updateMatrix();
 
         smokeMeshRef.current.setMatrixAt(i, _smokeDummy.matrix);
+
+        // Organic 3-stage color gradient
+        if (progress < 0.16) {
+          const tCol = progress / 0.16;
+          _puffColor.copy(emberCol).lerp(cloudCol, tCol);
+        } else if (progress < 0.62) {
+          const tCol = (progress - 0.16) / 0.46;
+          _puffColor.copy(cloudCol).lerp(mistCol, tCol);
+        } else {
+          _puffColor.copy(mistCol);
+        }
+
+        smokeMeshRef.current.setColorAt(i, _puffColor);
       }
       smokeMeshRef.current.instanceMatrix.needsUpdate = true;
+      if (smokeMeshRef.current.instanceColor) {
+        smokeMeshRef.current.instanceColor.needsUpdate = true;
+      }
     }
 
-    // Adapt smoke tint slightly for sunset golden hour / night (zero string allocations)
+    // Dynamic plume opacity for night/dusk
     if (smokeMatRef.current) {
       if (p.nightFactor > 0.4) {
-        smokeMatRef.current.color.copy(SMOKE_NIGHT_COL);
-        smokeMatRef.current.opacity = 0.28;
+        smokeMatRef.current.opacity = 0.32;
       } else if (p.timeOfDay > 16.5 && p.timeOfDay < 19.5) {
-        smokeMatRef.current.color.copy(SMOKE_GOLDEN_COL);
-        smokeMatRef.current.opacity = 0.38;
+        smokeMatRef.current.opacity = 0.44;
       } else {
-        smokeMatRef.current.color.copy(SMOKE_DAY_COL);
-        smokeMatRef.current.opacity = 0.35;
+        smokeMatRef.current.opacity = 0.40;
       }
     }
 
@@ -146,20 +187,20 @@ export const TriathlonCourse: React.FC = () => {
 
   return (
     <group>
-      {/* 68m Rising Low-Poly Campfire Smoke Plume */}
+      {/* 72m Billowing Low-Poly Campfire Smoke Plume */}
       <instancedMesh
         ref={smokeMeshRef}
         args={[undefined, undefined, SMOKE_PUFF_COUNT]}
         frustumCulled={false}
       >
-        <dodecahedronGeometry args={[0.5, 0]} />
+        <icosahedronGeometry args={[0.72, 1]} />
         <meshStandardMaterial
           ref={smokeMatRef}
-          color="#f4ede2"
-          roughness={0.95}
+          color="#ffffff"
+          roughness={0.92}
           metalness={0.02}
           transparent
-          opacity={0.35}
+          opacity={0.4}
           flatShading
           depthWrite={false}
         />

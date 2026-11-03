@@ -23,11 +23,16 @@ class BorealSoundscape {
   private waterFilter: BiquadFilterNode | null = null;
   private waterGain: GainNode | null = null;
 
+  // Dedicated High-Speed Aerodynamic Wind Rush (Whistle/Whoosh at 40-90 km/h)
+  private aeroFilter: BiquadFilterNode | null = null;
+  private aeroGain: GainNode | null = null;
+
   private zipOsc: OscillatorNode | null = null;
   private zipGain: GainNode | null = null;
 
   private fireFilter: BiquadFilterNode | null = null;
   private fireGain: GainNode | null = null;
+  private firePopTimer = 0.2;
 
   private noiseBuffer: AudioBuffer | null = null;
   private isMuted = false;
@@ -140,6 +145,21 @@ class BorealSoundscape {
     this.waterFilter.connect(this.waterGain);
     this.waterGain.connect(this.masterGain);
     waterSource.start(1.7);
+
+    // 4b. Visceral High-Speed Aerodynamic Wind Rush (Whoosh above 40 km/h)
+    const aeroSource = this.ctx.createBufferSource();
+    aeroSource.buffer = this.noiseBuffer;
+    aeroSource.loop = true;
+    this.aeroFilter = this.ctx.createBiquadFilter();
+    this.aeroFilter.type = 'bandpass';
+    this.aeroFilter.frequency.value = 650;
+    this.aeroFilter.Q.value = 3.2; // Resonant air cutting whistle
+    this.aeroGain = this.ctx.createGain();
+    this.aeroGain.gain.value = 0.0;
+    aeroSource.connect(this.aeroFilter);
+    this.aeroFilter.connect(this.aeroGain);
+    this.aeroGain.connect(this.masterGain);
+    aeroSource.start(0.8);
 
     // 5. Zipline Pulley Whirr Oscillator
     this.zipOsc = this.ctx.createOscillator();
@@ -392,6 +412,43 @@ class BorealSoundscape {
     src.start(now, Math.random() * 2, 0.28);
   }
 
+  // Cozy Campfire Procedural Pop & Ember Crackle
+  public triggerCampfirePop(proximity = 1.0) {
+    if (!this.initialized || !this.ctx || !this.noiseBuffer || !this.masterGain || this.isMuted) return;
+    const now = this.ctx.currentTime;
+    const popVol = (0.04 + Math.random() * 0.09) * proximity;
+
+    // 1. Resonant wood fiber snap impulse
+    const osc = this.ctx.createOscillator();
+    const oscGain = this.ctx.createGain();
+    osc.type = 'triangle';
+    const baseFreq = 1600 + Math.random() * 2200;
+    osc.frequency.setValueAtTime(baseFreq, now);
+    osc.frequency.exponentialRampToValueAtTime(320, now + 0.018);
+    oscGain.gain.setValueAtTime(popVol, now);
+    oscGain.gain.exponentialRampToValueAtTime(0.0005, now + 0.022);
+    osc.connect(oscGain);
+    oscGain.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + 0.025);
+
+    // 2. Tiny resin sizzle burst
+    if (Math.random() > 0.4) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.noiseBuffer;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'highpass';
+      filter.frequency.setValueAtTime(2800, now);
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(popVol * 0.5, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.masterGain);
+      src.start(now, Math.random() * 2, 0.05);
+    }
+  }
+
   private triggerSpatialBirdCall(bird: WildlifeSpecies) {
     if (!this.initialized || !this.ctx || !this.masterGain || this.isMuted) return;
     const p = mutablePhysics;
@@ -477,6 +534,7 @@ class BorealSoundscape {
     // Smoothly duck active vehicle/movement sounds when game is Paused
     if (p.isPaused) {
       if (this.windGain) this.windGain.gain.setTargetAtTime(0.03, now, 0.12);
+      if (this.aeroGain) this.aeroGain.gain.setTargetAtTime(0, now, 0.08);
       if (this.rollGain) this.rollGain.gain.setTargetAtTime(0, now, 0.08);
       if (this.urethaneOscGain) this.urethaneOscGain.gain.setTargetAtTime(0, now, 0.08);
       if (this.driftGain) this.driftGain.gain.setTargetAtTime(0, now, 0.08);
@@ -504,6 +562,14 @@ class BorealSoundscape {
       const targetWindGain = 0.06 + altRatio * 0.12 + speedRatio * 0.25;
       this.windFilter.frequency.setTargetAtTime(targetWindFreq, now, 0.1);
       this.windGain.gain.setTargetAtTime(targetWindGain, now, 0.1);
+    }
+
+    // 1b. Visceral High-Speed Aerodynamic Wind Rush (Whistle/Whoosh above 40 km/h)
+    if (this.aeroFilter && this.aeroGain) {
+      const aeroNorm = THREE.MathUtils.clamp((p.speed - 11.0) / 22.0, 0, 1);
+      const aeroVol = Math.pow(aeroNorm, 1.35) * 0.38;
+      this.aeroGain.gain.setTargetAtTime(aeroVol, now, 0.05);
+      this.aeroFilter.frequency.setTargetAtTime(450 + aeroNorm * 1150, now, 0.06);
     }
 
     // 2. Update Surface Rolling
@@ -581,17 +647,24 @@ class BorealSoundscape {
       }
     }
 
-    // 6. Step 4.2: Campfire Warm Crackling Hearth
+    // 6. Step 4.2: Campfire Warm Crackling Hearth & Procedural Ember Pops
     if (this.fireFilter && this.fireGain) {
       const distToFire = Math.hypot(
         p.position.x - CAMPFIRE_WORLD_POS.x,
         p.position.z - CAMPFIRE_WORLD_POS.z
       );
-      if (p.specialState === 'CAMPFIRE' || distToFire < 18) {
-        const proximity = p.specialState === 'CAMPFIRE' ? 1.0 : 1.0 - distToFire / 18;
-        const crackleMod = 900 + Math.random() * 1400;
+      if (p.specialState === 'CAMPFIRE' || distToFire < 22) {
+        const proximity = p.specialState === 'CAMPFIRE' ? 1.0 : Math.max(0, 1.0 - distToFire / 22);
+        const crackleMod = 950 + Math.random() * 1500;
         this.fireFilter.frequency.setTargetAtTime(crackleMod, now, 0.04);
-        this.fireGain.gain.setTargetAtTime(proximity * 0.16, now, 0.08);
+        this.fireGain.gain.setTargetAtTime(proximity * 0.18, now, 0.08);
+
+        // Random procedural ember pops & wood crackle snaps
+        this.firePopTimer -= dt;
+        if (this.firePopTimer <= 0) {
+          this.triggerCampfirePop(proximity);
+          this.firePopTimer = 0.12 + Math.random() * 0.38;
+        }
       } else {
         this.fireGain.gain.setTargetAtTime(0, now, 0.1);
       }
