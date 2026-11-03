@@ -15,7 +15,7 @@ export const App: React.FC = () => {
       <Canvas
         shadows
         dpr={[1, 2]}
-        camera={{ fov: 45, near: 0.5, far: 1800, position: [-10, 218, -468] }}
+        camera={{ fov: 45, near: 0.5, far: 2400, position: [-10, 218, -468] }}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
       >
         {/* Step 2.2: Dynamic 4-Palette Day/Night Cycle, Orbiting Sun/Moon & Starfield */}
