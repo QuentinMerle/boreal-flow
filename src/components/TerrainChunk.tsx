@@ -421,6 +421,79 @@ export const TerrainChunk: React.FC = () => {
     return baseGeo;
   }, []);
 
+  // 1b. Stylized Procedural Grass & Terrain Material with Multi-Scale Stippling & Velvety Sun Sheen
+  const terrainMaterial = useMemo(() => {
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.88,
+      metalness: 0.02,
+    });
+
+    mat.onBeforeCompile = (shader) => {
+      shader.vertexShader = `
+        varying vec3 vWorldPosition;
+        varying vec3 vWorldNormal;
+        ${shader.vertexShader}
+      `.replace(
+        '#include <begin_vertex>',
+        `
+        #include <begin_vertex>
+        vWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;
+        vWorldNormal = normalize(mat3(modelMatrix) * normal);
+        `
+      );
+
+      shader.fragmentShader = `
+        varying vec3 vWorldPosition;
+        varying vec3 vWorldNormal;
+        ${shader.fragmentShader}
+      `.replace(
+        '#include <color_fragment>',
+        `
+        #include <color_fragment>
+
+        // Detect meadow grass surfaces from vertex colors (green dominant + above water line)
+        bool isGrass = (diffuseColor.g > diffuseColor.r * 1.03 && diffuseColor.g > diffuseColor.b * 1.05 && vWorldPosition.y > 0.35);
+
+        if (isGrass) {
+          // 1. Blade micro-grain (~0.22m frequency) breaking up flat polygon surfaces
+          float bladeNoise = sin(vWorldPosition.x * 4.6 + sin(vWorldPosition.z * 5.4) * 1.6) *
+                             cos(vWorldPosition.z * 4.6 + cos(vWorldPosition.x * 3.8) * 1.6);
+
+          // 2. Organic patchiness (~4-8m scale): clover clusters vs dry sunlit fescue
+          float patchNoise = sin(vWorldPosition.x * 0.26 + 1.2) * cos(vWorldPosition.z * 0.22 + 0.8)
+                           + 0.45 * sin(vWorldPosition.x * 0.08 - vWorldPosition.z * 0.12);
+
+          // Rich clover green in moist hollows
+          vec3 cloverGreen = vec3(0.18, 0.44, 0.24);
+          // Dry sun-bleached golden alpine fescue on open knolls
+          vec3 fescueGold = vec3(0.48, 0.54, 0.26);
+
+          if (patchNoise > 0.0) {
+            float tClover = clamp(patchNoise * 1.5, 0.0, 0.34);
+            diffuseColor.rgb = mix(diffuseColor.rgb, cloverGreen, tClover);
+          } else {
+            float tFescue = clamp(-patchNoise * 1.4, 0.0, 0.30);
+            diffuseColor.rgb = mix(diffuseColor.rgb, fescueGold, tFescue);
+          }
+
+          // Apply micro-contrast blade stippling (+-7%)
+          float bladeMask = smoothstep(-0.4, 0.4, bladeNoise);
+          diffuseColor.rgb *= 0.93 + 0.14 * bladeMask;
+
+          // 3. Velvety Sun Sheen: translucent backscattering glow on grass canopy
+          vec3 sunDir = normalize(vec3(0.45, 0.8, 0.3));
+          float sunDot = dot(vWorldNormal, sunDir);
+          float backScatter = pow(clamp(-sunDot * 0.55 + 0.45, 0.0, 1.0), 2.2) * clamp(vWorldNormal.y, 0.0, 1.0);
+          diffuseColor.rgb += vec3(0.045, 0.075, 0.022) * backScatter;
+        }
+        `
+      );
+    };
+
+    return mat;
+  }, []);
+
   // 2. Smooth Ribbon Geometries for 1,600m Road, Dashed Yellow Center Lines, Dirt Singletrack & Downhill Whitewater River!
   const { roadRibbonGeo, roadStripeGeo, dirtRibbonGeo, dirtMaterial, riverRibbonGeo } = useMemo(() => {
     const roadRibbon = createSplineRibbonGeometry(
@@ -726,7 +799,8 @@ export const TerrainChunk: React.FC = () => {
       }
     }
 
-    for (let i = 0; i < 3800; i++) {
+    // 5,200 Instanced Stylized Grass Tufts (Populating Meadows, Trail Edges & Shores)
+    for (let i = 0; i < 5200; i++) {
       const rx = ((Math.sin(i * 91.7 + 41) * 43758.5453) % 1 + 1) % 1;
       const rz = ((Math.sin(i * 241.3 + 19) * 43758.5453) % 1 + 1) % 1;
       const x = (rx - 0.5) * (TERRAIN_WIDTH - 28);
@@ -737,11 +811,11 @@ export const TerrainChunk: React.FC = () => {
       const sCode = surfaceGrid[gz * cols + gx];
       const y = getTerrainHeightOnly(x, z);
 
-      if (sCode === 0 && y > WATER_LEVEL + 0.8 && y < 220) {
-        const s = 0.45 + ((i * 11) % 7) * 0.08;
-        dummy.position.set(x, y + s * 0.4, z);
+      if (sCode === 0 && y > WATER_LEVEL + 0.5 && y < 225) {
+        const s = 0.52 + ((i * 11) % 7) * 0.08;
+        dummy.position.set(x, y + 0.02, z);
         dummy.rotation.set(0, (i * 2.1) % (Math.PI * 2), 0);
-        dummy.scale.set(s, s * 1.35, s);
+        dummy.scale.set(s, s * 1.15, s);
         dummy.updateMatrix();
         grass.push(dummy.matrix.clone());
       }
@@ -775,14 +849,8 @@ export const TerrainChunk: React.FC = () => {
 
   return (
     <group>
-      {/* Main Smooth Vertex-Colored Terrain (Matte Clay Roughness, Smooth Normals) */}
-      <mesh geometry={terrainGeometry} receiveShadow>
-        <meshStandardMaterial
-          vertexColors
-          roughness={0.92}
-          metalness={0.01}
-        />
-      </mesh>
+      {/* Main Smooth Vertex-Colored Terrain with Procedural Grass Shader & Velvety Sun Sheen */}
+      <mesh geometry={terrainGeometry} material={terrainMaterial} receiveShadow />
 
       {/* Dedicated Smooth Charcoal Asphalt Road Ribbon Mesh with Cambered Gravel Shoulders */}
       <mesh geometry={roadRibbonGeo} receiveShadow>
@@ -1154,23 +1222,118 @@ const InstancedRocks: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
   );
 };
 
+/**
+ * Creates a stylized 3-blade curved grass tuft geometry with root-to-tip vertex colors.
+ * Root: dark forest soil green -> Mid: vibrant meadow green -> Tip: sunlit yellow-green.
+ */
+function createGrassTuftGeometry(): THREE.BufferGeometry {
+  const geo = new THREE.BufferGeometry();
+  const bladeCount = 3;
+  // 3 blades * 2 quads * 2 triangles * 3 vertices = 36 vertices
+  const vertexCount = bladeCount * 12;
+  const positions = new Float32Array(vertexCount * 3);
+  const normals = new Float32Array(vertexCount * 3);
+  const colors = new Float32Array(vertexCount * 3);
+
+  let vIdx = 0;
+
+  for (let b = 0; b < bladeCount; b++) {
+    const angle = (b * Math.PI * 2) / bladeCount + b * 0.15;
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+    const perpX = -sinA;
+    const perpZ = cosA;
+
+    // Stage 0 (Root): y = 0, width = 0.08
+    const x0 = 0, y0 = 0, z0 = 0;
+    const w0 = 0.08;
+
+    // Stage 1 (Mid): y = 0.38, width = 0.05, curved outward along angle
+    const x1 = cosA * 0.08, y1 = 0.38, z1 = sinA * 0.08;
+    const w1 = 0.05;
+
+    // Stage 2 (Tip): y = 0.75, width = 0.015, curved further outward
+    const x2 = cosA * 0.22, y2 = 0.75, z2 = sinA * 0.22;
+    const w2 = 0.015;
+
+    // Outward facing normal
+    const nx = cosA * 0.5;
+    const ny = 0.85;
+    const nz = sinA * 0.5;
+    const nLen = Math.hypot(nx, ny, nz) || 1;
+    const normX = nx / nLen;
+    const normY = ny / nLen;
+    const normZ = nz / nLen;
+
+    const cRoot = [0.12, 0.26, 0.15];
+    const cMid = [0.38, 0.64, 0.32];
+    const cTip = [0.65, 0.84, 0.26];
+
+    // Quad 1: Root to Mid (2 triangles: 6 vertices)
+    const quad1 = [
+      { x: x0 - perpX * w0, y: y0, z: z0 - perpZ * w0, c: cRoot },
+      { x: x0 + perpX * w0, y: y0, z: z0 + perpZ * w0, c: cRoot },
+      { x: x1 + perpX * w1, y: y1, z: z1 + perpZ * w1, c: cMid },
+
+      { x: x0 - perpX * w0, y: y0, z: z0 - perpZ * w0, c: cRoot },
+      { x: x1 + perpX * w1, y: y1, z: z1 + perpZ * w1, c: cMid },
+      { x: x1 - perpX * w1, y: y1, z: z1 - perpZ * w1, c: cMid },
+    ];
+
+    // Quad 2: Mid to Tip (2 triangles: 6 vertices)
+    const quad2 = [
+      { x: x1 - perpX * w1, y: y1, z: z1 - perpZ * w1, c: cMid },
+      { x: x1 + perpX * w1, y: y1, z: z1 + perpZ * w1, c: cMid },
+      { x: x2 + perpX * w2, y: y2, z: z2 + perpZ * w2, c: cTip },
+
+      { x: x1 - perpX * w1, y: y1, z: z1 - perpZ * w1, c: cMid },
+      { x: x2 + perpX * w2, y: y2, z: z2 + perpZ * w2, c: cTip },
+      { x: x2 - perpX * w2, y: y2, z: z2 - perpZ * w2, c: cTip },
+    ];
+
+    for (const pt of [...quad1, ...quad2]) {
+      positions[vIdx * 3] = pt.x;
+      positions[vIdx * 3 + 1] = pt.y;
+      positions[vIdx * 3 + 2] = pt.z;
+
+      normals[vIdx * 3] = normX;
+      normals[vIdx * 3 + 1] = normY;
+      normals[vIdx * 3 + 2] = normZ;
+
+      colors[vIdx * 3] = pt.c[0];
+      colors[vIdx * 3 + 1] = pt.c[1];
+      colors[vIdx * 3 + 2] = pt.c[2];
+
+      vIdx++;
+    }
+  }
+
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geo;
+}
+
+const grassTuftGeometry = createGrassTuftGeometry();
+
 const InstancedGrass: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) => {
   const meshRef = useRef<THREE.InstancedMesh>(null);
 
   const grassMaterial = useMemo(() => {
     const mat = new THREE.MeshStandardMaterial({
-      color: '#ffffff',
-      flatShading: true,
-      roughness: 0.9,
+      vertexColors: true,
+      roughness: 0.85,
+      metalness: 0.02,
+      side: THREE.DoubleSide,
     });
-    mat.onBeforeCompile = (shader) => injectWindShader(shader, 0.24);
+    mat.onBeforeCompile = (shader) => injectWindShader(shader, 0.22);
     return mat;
   }, []);
 
   React.useLayoutEffect(() => {
     if (!meshRef.current) return;
     const col = new THREE.Color();
-    const shades = ['#487d49', '#5a8f5c', '#6a994e', '#3d6e47'];
+    const shades = ['#ffffff', '#e8f5e9', '#f1f8e9', '#fffde7'];
     for (let i = 0; i < matrices.length; i++) {
       meshRef.current.setMatrixAt(i, matrices[i]);
       col.set(shades[i % 4]);
@@ -1182,9 +1345,7 @@ const InstancedGrass: React.FC<{ matrices: THREE.Matrix4[] }> = ({ matrices }) =
   }, [matrices]);
 
   return (
-    <instancedMesh ref={meshRef} args={[undefined, grassMaterial, matrices.length]}>
-      <coneGeometry args={[0.32, 0.95, 4]} />
-    </instancedMesh>
+    <instancedMesh ref={meshRef} args={[grassTuftGeometry, grassMaterial, matrices.length]} />
   );
 };
 
