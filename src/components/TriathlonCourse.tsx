@@ -9,6 +9,7 @@ import {
 } from '../state/gameStore';
 import { getTerrainHeightOnly } from '../world/terrainData';
 import { soundscape } from '../audio/soundscape';
+import { COMPILED_BOREAL_COURSE } from '../world/courseAst';
 
 const SMOKE_PUFF_COUNT = 64;
 const _smokeDummy = new THREE.Object3D();
@@ -261,6 +262,125 @@ export const TriathlonCourse: React.FC = () => {
           <meshStandardMaterial color="#f4a261" emissive="#ff9f1c" emissiveIntensity={0.8} />
         </mesh>
       </group>
+
+      {/* Session 3 JSON-AST Landmarks: North Shore Boardwalks */}
+      <NorthShoreBoardwalk x={-44} y={140} z={-250} length={42} />
+
+      {/* Session 3 JSON-AST Landmarks: Pioneer Timber Flume Chute */}
+      <TimberFlumeChute x={-56} y={72} z={-25} length={36} />
+
+      {/* Session 3 JSON-AST Landmarks: Road Gap Kicker */}
+      <RoadGapRamp x={92} y={268} z={-585} />
+    </group>
+  );
+};
+
+const NorthShoreBoardwalk: React.FC<{
+  x: number;
+  y: number;
+  z: number;
+  length: number;
+}> = ({ x, y, z, length }) => {
+  const planks = useMemo(() => {
+    return Array.from({ length: 14 }, (_, i) => {
+      const frac = i / 13 - 0.5;
+      const pz = frac * length;
+      const px = Math.sin(frac * Math.PI) * 4.2;
+      const py = getTerrainHeightOnly(x + px, z + pz) + 0.65;
+      const yaw = Math.cos(frac * Math.PI) * 0.35;
+      return { px, py, pz, yaw };
+    });
+  }, [x, y, z, length]);
+
+  return (
+    <group position={[x, 0, z]}>
+      {planks.map((p, idx) => (
+        <group key={idx} position={[p.px, p.py, p.pz]} rotation={[0, p.yaw, 0]}>
+          <mesh castShadow receiveShadow>
+            <boxGeometry args={[1.9, 0.12, 2.6]} />
+            <meshStandardMaterial color="#805b38" roughness={0.92} flatShading />
+          </mesh>
+          <mesh castShadow position={[-0.8, -0.6, 0]}>
+            <cylinderGeometry args={[0.08, 0.1, 1.2, 5]} />
+            <meshStandardMaterial color="#4e3621" roughness={0.95} flatShading />
+          </mesh>
+          <mesh castShadow position={[0.8, -0.6, 0]}>
+            <cylinderGeometry args={[0.08, 0.1, 1.2, 5]} />
+            <meshStandardMaterial color="#4e3621" roughness={0.95} flatShading />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+};
+
+const TimberFlumeChute: React.FC<{
+  x: number;
+  y: number;
+  z: number;
+  length: number;
+}> = ({ x, y, z, length }) => {
+  const segments = useMemo(() => {
+    return Array.from({ length: 10 }, (_, i) => {
+      const frac = i / 9 - 0.5;
+      const pz = frac * length;
+      const px = Math.sin(frac * Math.PI * 0.8) * 3.5;
+      const py = getTerrainHeightOnly(x + px, z + pz) + 0.75;
+      const yaw = Math.cos(frac * Math.PI * 0.8) * 0.28;
+      return { px, py, pz, yaw };
+    });
+  }, [x, y, z, length]);
+
+  return (
+    <group position={[x, 0, z]}>
+      {segments.map((s, idx) => (
+        <group key={idx} position={[s.px, s.py, s.pz]} rotation={[0, s.yaw, 0]}>
+          <mesh castShadow receiveShadow>
+            <cylinderGeometry args={[1.4, 1.4, 3.2, 8, 1, true, 0, Math.PI]} />
+            <meshStandardMaterial color="#8b5a2b" side={THREE.DoubleSide} roughness={0.9} flatShading />
+          </mesh>
+          <mesh castShadow position={[0, -0.7, 0]}>
+            <boxGeometry args={[2.4, 0.15, 0.2]} />
+            <meshStandardMaterial color="#53371e" roughness={0.95} flatShading />
+          </mesh>
+          <mesh castShadow position={[-0.9, -1.2, 0]}>
+            <cylinderGeometry args={[0.07, 0.09, 1.4, 5]} />
+            <meshStandardMaterial color="#53371e" roughness={0.95} flatShading />
+          </mesh>
+          <mesh castShadow position={[0.9, -1.2, 0]}>
+            <cylinderGeometry args={[0.07, 0.09, 1.4, 5]} />
+            <meshStandardMaterial color="#53371e" roughness={0.95} flatShading />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+};
+
+const RoadGapRamp: React.FC<{
+  x: number;
+  y: number;
+  z: number;
+}> = ({ x, y, z }) => {
+  const groundY = getTerrainHeightOnly(x, z);
+  return (
+    <group position={[x, groundY, z]} rotation={[0.18, 0.24, 0]}>
+      <mesh castShadow receiveShadow position={[0, 0.55, 0]}>
+        <boxGeometry args={[2.8, 0.85, 4.2]} />
+        <meshStandardMaterial color="#94653b" roughness={0.88} flatShading />
+      </mesh>
+      <mesh position={[0, 0.98, 1.95]}>
+        <boxGeometry args={[2.85, 0.12, 0.35]} />
+        <meshStandardMaterial color="#eb5e46" roughness={0.7} flatShading />
+      </mesh>
+      <mesh position={[-1.5, 1.2, 1.8]}>
+        <cylinderGeometry args={[0.04, 0.04, 2.2, 5]} />
+        <meshStandardMaterial color="#e2e8f0" roughness={0.5} />
+      </mesh>
+      <mesh position={[-1.5, 2.0, 1.5]}>
+        <boxGeometry args={[0.02, 0.45, 0.65]} />
+        <meshStandardMaterial color="#eb5e46" roughness={0.8} />
+      </mesh>
     </group>
   );
 };
