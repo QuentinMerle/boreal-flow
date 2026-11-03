@@ -1,8 +1,8 @@
-# Boreal Flow — Session 2 Specification & Architecture Roadmap
+# Boreal Flow — Session 2 & 2.5 Specification & Architecture Roadmap
 
 > **Branch:** `feature/session-2-diorama-gameplay`  
 > **Repository:** [https://github.com/QuentinMerle/boreal-flow](https://github.com/QuentinMerle/boreal-flow)  
-> **Focus:** Diorama aesthetic polish, Blender MCP pipeline, 2.5D isometric icon factory, analog gamepad feel, zero-HUD gameplay loop, and on-device local AI.
+> **Focus:** Diorama aesthetic polish, Blender MCP pipeline, 1,600m map scale, analog gamepad feel, procedural Web Audio ASMR, zero-HUD gameplay loop, and Expedition Field Guide UI.
 
 ---
 
@@ -10,18 +10,79 @@
 
 In Session 1, we established the **287 kB procedural proof-of-concept**: $O(1)$ heightfield physics, 4 movement states (`WALK`, `LONGBOARD`, `BIKE`, `CANOE`), procedural audio synthesis, day/night cycles, and basic articulated rig.
 
-In Session 2, we elevate this technical foundation into an **authentic, tactile indie game experience**:
-1. **From Primitives to "Diorama Clay" Assets:** Transitioning select procedural meshes to low-poly `.glb` models generated via **Blender MCP**, optimized via `meshopt`, sharing a single 32x32 color palette atlas and styled with warm, clay-like matte materials (`roughness: 0.9`).
-2. **2.5D Isometric Icon Factory:** An automated pipeline (Blender MCP dimetric 2:1 camera $\to$ Eevee 48x48 sans-AA $\to$ ColorRamp 3 tones $\to$ 1px black outline $\to$ SVG `<feComponentTransfer>` palette swap).
-3. **Lonely Mountains Terrain Stamping & Map Scale Upgrade:** Doubling the slope to a **1,000m canyon descent** with analytical $O(1)$ elevation, while carving technical VTT singletrack shortcuts through pine forests, fallen tree hurdle jumps, and an organic river canyon beneath the $Y=0$ water plane.
-4. **Physical Game Feel & Xbox Controller:** Native Bluetooth Gamepad API integration with analog triggers, deadzones, and dual-rumble haptic feedback (`vibrationActuator`).
-5. **Zero-HUD Gameplay Loop ("Le But sans le Stress"):**
-   - **Boreal Triathlon:** Summit to lake shore marked by a smoke plume above the canopy.
-   - **Scarf Ghost ("Fantôme d'Écharpe"):** Pre-allocated `Float32Array(900 * 5)` ghost run recorder in `localStorage`.
-   - **Ranger Missions:** Auditory landmarks and ridge beacon lighting.
-6. **Local On-Device AI (Transformers.js in Web Worker):**
-   - Push-to-talk Walkie-Talkie on CPU Wasm (`whisper-tiny` ~40MB) driving diegetic in-game reactions without cloud latency.
-   - Telegraphic campfire telemetry field notes.
+In Session 2 and Session 2.5, we elevated this technical foundation into an **authentic, tactile indie game experience**:
+1. **Map Scale Upgrade (1,600m Descent):** Tripled the course length ($Z = -800$ to $+800$, altitude drop of 335m) with the upper "Red Bull Rampage" sandstone couloirs and crags (`RAMPAGE_OCHRE`), middle forest singletracks, and lakeside finish.
+2. **From Primitives to "Diorama Clay" Assets:** Blender 5.2 modeling of `campsite.glb` (A-frame canvas tent, split cedar log bench, stone fire pit) with custom GLSL dancing campfire flames.
+3. **Organic Stylized Smoke Plume:** 64-puff icosahedral plume with thermal convection swirl, sinusoidal billow scale envelope (no popping on loop), and 3-stage warm hearth to sky mist gradient.
+4. **Procedural Web Audio Soundscape Expansion:**
+   - Resonant bandpass aerodynamic wind whistle (450–1600 Hz) surging at 40–90 km/h.
+   - Cozy campfire crackling and resonant wood fiber ember pops (1600–3800 Hz) within 22m of the fire pit.
+5. **Physical Game Feel & Camera Calibration:**
+   - Removal of artificial blob shadow under player (relying exclusively on crisp 2048px real-time directional shadow map).
+   - Dual-mode camera: Elevated Diorama view (10.5–14.5m, ~38° pitch) for course readability + Close 3rd-person "Skate / Action" camera on `[V]`.
+   - Canoe rebalance: sprint capped at 28 km/h, authentic 4.8 m/s² paddling strokes, hydrodynamic fluid drag.
+   - Micro-vibration road rumble smoothed by 3x (amplitude 0.026).
+6. **Expedition Field Guide UI / UX:** High-polish pause overlay with tactile Trailhead cards, segmented sky bar, collectible wildlife badges, and physical keycaps/gamepad badges.
+
+---
+
+## 1.5 Session 2.5 Changelog & Playtest Observations
+
+### Ce qui a été réalisé en Session 2.5 (Completed ✅)
+- [x] **Suppression de l'ombre factice (Blob Shadow) :** Retrait du mesh `blobShadow` sous le joueur ; l'ombre portée directionnelle en temps réel (shadow map Three.js 2048px) prend le relais pour un contact au sol naturel.
+- [x] **Caméra par défaut réhaussée (Diorama Surplomb) :** Élévation à 10,5–14,5 m avec inclinaison de ~38° vers l'avant (façon *Lonely Mountains: Downhill*) pour anticiper les virages et obstacles. La vue proche "Skate" reste disponible sur `[V]`.
+- [x] **Rééquilibrage physique du Canoë :** Vitesse max plafonnée à 28 km/h en sprint (croisière 15–18 km/h), accélération réduite de 21 m/s² à 4,8 m/s², traînée visqueuse accrue sur l'eau (fini les pointes involontaires à 70 km/h).
+- [x] **Adoucissement du shake de vitesse :** Amplitude divisée par plus de 3 (`0.026` au lieu de `0.095`) et fréquences lissées (22–28 Hz) pour un grondement d'asphalte subtil.
+- [x] **Fumée de feu de camp organique :** 64 bouffées icosaédriques avec enveloppe d'échelle en cloche (0,3 m $\to$ 4,5 m $\to$ résorption douce dans le ciel), vortex thermique hélicoïdal et gradient 3 couleurs (ambre braise $\to$ crème marshmallow $\to$ brume d'altitude).
+- [x] **Ambiance sonore Web Audio procédurale :** Sifflement aérodynamique haute vitesse (filtre bandpass résonant au-delà de 40 km/h) et claquements de braises / crépitements aléatoires près du bivouac.
+- [x] **Refonte complète de l'UI Pause ("Expedition Field Guide") :** Grille de cartes Trailhead tactiles avec code couleur par discipline, barre météo segmentée, badges d'espèces découvrables et touches clavier/manette sous forme de keycaps `<kbd>`.
+
+### Observations de Jeu & Retours d'Expérience (Playtest Findings)
+1. **Flux de descente & blocage en montée :**
+   - *Constat :* Lorsque le joueur rate une épingle et fait demi-tour, il se retrouve face à la pente et la gravité l'immobilise.
+   - *Analyse :* Dans *Lonely Mountains*, le tracé est conçu pour n'offrir aucun faux-plat montant. Le terrain doit guider naturellement le joueur vers l'aval (profil en cuvette / entonnoir).
+2. **Aspect plat de l'herbe du terrain :**
+   - *Constat :* L'herbe en couleur de vertex unique par triangle manque de matière et de texture sur les grandes étendues.
+   - *Analyse :* Un shader de stippling/dither 2 tons avec détection de pente (roche calcaire automatique sur les pentes raides) apportera de la profondeur visuelle sans coût GPU.
+3. **Sentiment de solitude / Besoin de vie :**
+   - *Constat :* La carte de 1 600m est grandiose mais manque d'animation vivante en dehors du joueur et des oiseaux statiques.
+   - *Analyse :* L'intégration d'animaux 3D réactifs (orignal au lac, ours sur le canyon, lièvre détalant) et d'un combi van rétro sur la route asphaltée (avec aspiration/drafting) rendra le monde vivant et vibrant.
+
+---
+
+## 1.6 Roadmap Session 3 — Backlog Prioritaire
+
+### Chantier 1 : Game Design Pure & Flow "Lonely Mountains"
+- [ ] **Profil de piste en cuvette (Funneling) :** Ajuster le relief aux abords des épingles pour empêcher les sorties de piste incontrôlées et canaliser la trajectoire vers l'aval.
+- [ ] **Touche de Restart / Checkpoint instantané `[R]` :** Snapper immédiatement le joueur 50 m en amont sur le tracé officiel à bonne allure en cas de blocage ou crash.
+- [ ] **Tunnels de canopée (Ombre mouchetée) :** Branches basses au-dessus du singletrack créant des bandes d'ombres au sol décuplant la vitesse perçue.
+- [ ] **Passerelles North Shore en bois :** Pontons surélevés et virages en lattes de bois au-dessus des ruisseaux avec claquement audio des pneus (`tac-tac`).
+- [ ] **Gap Jumps de coupe-virage :** Kickers naturels permettant de sauter par-dessus le vide pour couper les lacets au chrono.
+- [ ] **Ondulations de freinage (Braking bumps) :** Vibrations rythmiques du terrain avant les gros virages.
+
+### Chantier 2 : Shading & Texturation du Terrain / Herbe
+- [ ] **Custom Terrain Shader (Dither & Stippling) :**
+  - Modulation procédurale 2 tons de vert (vert tendre, mousse, fétuque dorée).
+  - Détection automatique de pente : roche calcaire au-delà de 35° d'inclinaison.
+  - Sheen anisotrope au soleil (reflet velouté de l'herbe selon l'angle de vue).
+- [ ] **Touffes d'herbe instanciées (cartes 3D) :** 2 500 touffes le long des sentiers animées par le vent en 1 draw call.
+
+### Chantier 3 : Vie dans le Parc (Faune & Trafic)
+- [ ] **Modèles Blender 3D Low-Poly :**
+  - **Orignal (Moose) :** Au bord des roseaux du lac, relève la tête au passage du joueur.
+  - **Ours noir :** Sur le flanc ouest du canyon près des buissons de myrtilles.
+  - **Lièvre d'Amérique :** Traverse le sentier devant le vélo et détale dans un tronc d'arbre.
+- [ ] **Combi Van Canadien Rétro sur la Route :**
+  - Véhicule autonome suivant la spline `asphaltCurve` à 25–30 km/h.
+  - Mécanique d'aspiration (drafting) en Longboard pour gain de vitesse.
+  - Klaxon / réaction à la sonnette `[C]`.
+
+### Chantier 4 : Scarf Ghost & Time Trial Recap
+- [ ] **Scarf Ghost System ("Fantôme d'Écharpe") :** Enregistrement de trajectoire `Float32Array(900 * 5)` dans `localStorage` pour rejouer son meilleur chrono.
+- [ ] **Carte récapitulative d'arrivée :** Affichage d'un panneau en bois sculpté avec temps final, badge débloqué (Érable, Geai, Orignal) et vitesse de pointe.
+
+### Chantier 5 : On-Device AI (Transformers.js)
+- [ ] **Web Worker Wasm CPU (`whisper-tiny`) :** Push-to-talk talkie-walkie sans latence GPU pour réactions diégétiques du monde.
 
 ---
 

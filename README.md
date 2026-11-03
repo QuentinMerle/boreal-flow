@@ -26,7 +26,7 @@ This repository is developed iteratively **session by session, branch by branch*
 
 ```bash
 # Clone the repository
-git clone https://github.com/vibrisse-studio/boreal-flow.git
+git clone https://github.com/QuentinMerle/boreal-flow.git
 cd boreal-flow
 
 # Install dependencies
@@ -53,11 +53,13 @@ Open **`http://localhost:5173/`** in your browser.
 | **`3`** | **Mountain Bike (VTT) Mode** (agile suspension, circular pedaling, drift skids) |
 | **`4`** | **Prospector Canoe Mode** (mirror lake gliding, rhythmic left/right paddling, river currents) |
 | **`Space` / `Shift`** | Longboard Powerslide / Bike Bunny-Hop / Climbing Dyno Leap |
-| **`E`** | **Contextual Action:** Equipment racks, sit by the campfire, hook onto zipline, latch onto rock crag |
+| **`V` / Gamepad `R3`** | **Toggle Camera Mode:** Elevated Diorama View $\leftrightarrow$ Close 3rd-Person "Skate / Action" View |
+| **`Esc` / `P` / Gamepad `Start`** | **Expedition Field Guide:** Pause menu, Trailheads, Sky presets, and Wildlife journal |
+| **`E` / Gamepad `X`** | **Contextual Action:** Start triathlon race, equipment racks, campfire bivouac, zipline |
 | **`C` / `F`** | **Non-Verbal Emote:** Double brass bike bell (`BIKE`) or warm *Journey* harmonic chime + hand wave |
-| **`B`** | **Acoustic Binoculars:** Optic zoom (`FOV 16°`) to scan and log wildlife species |
+| **`B` / Gamepad `LB`** | **Acoustic Binoculars:** Optic zoom (`FOV 16°`) to scan and log wildlife species |
 | **`N`** | Toggle Day / **Night** (automatic player headlamp + illuminated base camp) |
-| **`R`** | Respawn at chosen location |
+| **`R` / Gamepad `Back`** | Respawn at chosen location / checkpoint |
 
 ---
 
@@ -86,23 +88,21 @@ Scenic asphalt roads and technical singletracks are generated as dedicated extru
 - [x] Unified "Arcade Sphere" multi-mode controller (`WALK`, `LONGBOARD`, `BIKE`, `CANOE`).
 - [x] Instanced urethane drift smoke and V-shaped water wake foam rings.
 
-### Phase 2 — Living Nature, Day/Night Cycle & Procedural ASMR (Completed ✅)
-- [x] Instanced pines, mossy boulders, and wind-swayed alpine grass tufts.
-- [x] 4-palette dynamic day/night cycle (Dawn, Noon, Golden Hour, Night) with orbiting sun & moon discs.
-- [x] Automatic player front `SpotLight` (headlamp) and illuminated lakeside expedition tent & campfire.
-- [x] 100% native Web Audio API soundscape (altitude wind, urethane roll hum, gravel crunch, paddle splash).
+### Phase 2 & 2.5 — 1,600m Map, Diorama Polish & Game Feel (Completed ✅)
+- [x] **1,600m Canyon Scale:** Extended map from summit (`Z = -800`, altitude 335m) to Mirror Lake (`Z = +800`) with upper Red Bull Rampage sandstone couloirs and crags.
+- [x] **Blender MCP Campsite Asset:** Modeled A-frame canvas tent, split-log bench, stone fire pit, and procedural GLSL dancing campfire flames.
+- [x] **Organic Stylized Smoke Plume:** 64-puff icosahedral plume with thermal convection swirl, sinusoidal billow envelope, and 3-stage warm ember to sky mist gradient.
+- [x] **Procedural Web Audio Expansion:** High-speed aerodynamic wind rush bandpass (40–90 km/h) and organic campfire pops / wood crackle snaps.
+- [x] **Camera & Game Feel Calibration:** Elevated Diorama view (10.5–14.5m, ~38° pitch) + close 3rd-person "Skate / Action" view on `[V]`. Road shake smoothed by 3x.
+- [x] **Canoe Physics Rebalance:** Hydrodynamic fluid drag, athletic 28 km/h sprint cap, authentic 4.8 m/s² stroke acceleration.
+- [x] **Expedition Field Guide UI:** Structured Trailhead cards, segmented sky bar, collectible wildlife badges, and tactile keycaps/gamepad badges.
 
-### Phase 3 — Canadian Park Exploration & Expressive Rig (Completed ✅)
-- [x] Procedural 7-joint character rig: head turns into curves, curiosity glance at POIs, aero tuck crouch, wind scarf flutter.
-- [x] Contextual trailhead racks & dock transitions with low-poly "Poof" cloud bursts.
-- [x] 3D spatialized birdwatching (Common Loon, Stellar Blue Jay, Bald Eagle, Great Horned Owl).
-- [x] Binoculars viewfinder mode (`FOV 16°`) with interactive field notebook (`📓 WILDLIFE 0/4`).
-- [x] Bouldering cliff face with circular `GRIP` stamina ring, Summit Firewatch Tower, and 340m steel Zipline.
-
-### Phase 4 — Cozy Social Hub & Multiplayer (In Progress ⏳)
-- [x] **Step 4.2:** Non-verbal emotes (double-strike brass bike bell, warm vocal chime, waving hand) and *"Sit by the Campfire"* state with intimate telephoto camera zoom (`FOV 32°`) and ember crackle.
-- [ ] **Step 4.1:** Lightweight 15Hz WebSocket state synchronization with client-side `lerp`/`slerp` dead reckoning.
-- [ ] **Bonus Activity:** Lakeside skipping stones mini-game with multi-bounce water physics and concentric ripples.
+### Phase 3 — Wildlife, Road Traffic & Flow-State Game Design (Next / Session 3 Backlog ⏳)
+- [ ] **Lonely Mountains Flow & Checkpoints:** One-way downhill funnels, instant rewind hotkey `[R]`, canopy shadow tunnels, North Shore wooden boardwalks, and gap jump kickers.
+- [ ] **Procedural Terrain & Grass Shader:** 2-tone stippling/dither grass shader, slope-based limestone cliffs, anisotropic sun sheen, and wind-blown instanced grass tufts.
+- [ ] **Park Wildlife & Ambient Traffic:** Low-poly 3D animated Moose, Black Bear, Snowshoe Hare, and retro Canadian camper van on the road with drafting mechanics.
+- [ ] **Scarf Ghost & Finish Recap:** Ghost run replay via `Float32Array(900 * 5)` in `localStorage` and diegetic wooden finish recap board.
+- [ ] **On-Device Local AI:** Push-to-talk Walkie-Talkie on CPU Wasm (`whisper-tiny` ~40MB) driving in-game world events without cloud latency.
 
 ---
 
@@ -115,11 +115,12 @@ src/
 ├── components/
 │   ├── ArcadeController.tsx   # Multi-mode kinematic sphere & 7-joint character rig
 │   ├── DayNightAtmosphere.tsx # 4-palette lighting, orbiting celestial bodies & starfield
-│   ├── DioramaCamera.tsx      # Damped spring follow camera & binoculars optics
-│   ├── HudOverlay.tsx         # Zero-rerender DOM telemetry, notebook & stamina ring
-│   ├── ParkActivities.tsx     # Firewatch tower, bouldering crag, 340m zipline & wildlife
+│   ├── DioramaCamera.tsx      # Dual-mode camera: Elevated Diorama & Skate Action + optics
+│   ├── HudOverlay.tsx         # Expedition Field Guide, zero-rerender DOM telemetry & controls
+│   ├── ParkActivities.tsx     # Campsite GLB, bouldering, firewatch tower, 700m zipline & wildlife
 │   ├── ParticleJuice.tsx      # Instanced drift dust, water wake & transition poof bursts
-│   └── TerrainChunk.tsx       # Low-poly terrain mesh, smooth ribbons & instanced foliage
+│   ├── TerrainChunk.tsx       # 1,600m low-poly terrain, Rampage crags, ribbons & foliage
+│   └── TriathlonCourse.tsx    # 1,600m timed course, 72m organic smoke plume & badges
 ├── math/
 │   └── noise.ts              # Zero-dependency 2D Simplex & FBM noise generators
 ├── state/
