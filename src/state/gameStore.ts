@@ -70,14 +70,14 @@ export const PHYSICS_PRESETS: Record<MovementMode, PhysicsPreset> = {
   CANOE: {
     label: 'Whitewater Canoe / Kayak',
     keyHint: '4',
-    maxSpeed: 30,
-    accelForce: 21,
-    gravityScale: 1.45,
-    rollingResistance: 0.35,
-    lateralGrip: 3.8,
-    driftGrip: 1.35,
-    turnSpeed: 2.5,
-    leanFactor: 0.38,
+    maxSpeed: 8.0, // ~28 km/h sprint, cruising at 15-18 km/h
+    accelForce: 4.8, // Smooth authentic paddling strokes
+    gravityScale: 0.35, // Water viscous resistance dampens steep falls
+    rollingResistance: 0.75, // Natural hydrodynamic glide damping
+    lateralGrip: 4.5,
+    driftGrip: 2.0,
+    turnSpeed: 2.2,
+    leanFactor: 0.28,
     hopImpulse: 0,
     accentColor: '#4ea8de',
   },

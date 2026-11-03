@@ -83,7 +83,6 @@ export const ArcadeController: React.FC = () => {
 
   const rootGroupRef = useRef<THREE.Group>(null);
   const visualTiltRef = useRef<THREE.Group>(null);
-  const blobShadowRef = useRef<THREE.Mesh>(null);
   const paddleRef = useRef<THREE.Object3D | null>(null);
   const bikeSteerRef = useRef<THREE.Object3D | null>(null);
   const bikeFrontWheelRef = useRef<THREE.Object3D | null>(null);
@@ -684,7 +683,15 @@ export const ArcadeController: React.FC = () => {
 
       const isDownhillRiverCanoe = isOnWater && mode === 'CANOE' && p.position.z < 480;
       if (p.isGrounded && (!isOnWater || isDownhillRiverCanoe) && !onTowerDeck && mode !== 'WALK') {
-        if (downhillDot >= 0) {
+        if (mode === 'CANOE') {
+          // Canoe on water: buoyant fluid drag moderates downhill pull (caps rapids around 24-30 km/h max)
+          if (downhillDot >= 0) {
+            forwardVel += downhillDot * 9.5 * preset.gravityScale * dt;
+          } else {
+            forwardVel += downhillDot * 32.0 * dt;
+          }
+          lateralVel += _slopeDown.dot(_right) * 8.0 * dt;
+        } else if (downhillDot >= 0) {
           // Downhill gravity acceleration: rewards steep lines & Aero Tuck
           const tuckGravityBoost = isAeroAttackTuck ? 1.32 : 1.0;
           const gravityAccel = 24.5 * preset.gravityScale * tuckGravityBoost;
@@ -694,7 +701,9 @@ export const ArcadeController: React.FC = () => {
           const uphillPullback = 54.0 * preset.gravityScale;
           forwardVel += downhillDot * uphillPullback * dt;
         }
-        lateralVel += _slopeDown.dot(_right) * 20.0 * preset.gravityScale * 0.42 * dt;
+        if (mode !== 'CANOE') {
+          lateralVel += _slopeDown.dot(_right) * 20.0 * preset.gravityScale * 0.42 * dt;
+        }
       }
 
       // 5. Mode-Specific Authentic Propulsion ("Lonely Mountains: Downhill" Feel)
@@ -778,8 +787,8 @@ export const ArcadeController: React.FC = () => {
         p.isPumping = false;
         const waterEfficiency = isOnWater ? 1.0 : 0.22;
         if (accelInput > 0) {
-          p.paddlePhase += dt * (4.2 + 2.0 * accelInput);
-          const strokePulse = 0.75 + 0.45 * Math.max(0, Math.sin(p.paddlePhase));
+          p.paddlePhase += dt * (3.2 + 1.4 * accelInput);
+          const strokePulse = 0.65 + 0.45 * Math.max(0, Math.sin(p.paddlePhase));
           if (forwardVel < preset.maxSpeed * waterEfficiency) {
             forwardVel += preset.accelForce * strokePulse * waterEfficiency * accelInput * dt;
           }
@@ -792,8 +801,8 @@ export const ArcadeController: React.FC = () => {
 
         if (isOnWater) {
           getRiverCurrentVector(p.position.x, p.position.z, _riverCurrent);
-          forwardVel += _riverCurrent.dot(_forward) * dt;
-          lateralVel += _riverCurrent.dot(_right) * dt;
+          forwardVel += _riverCurrent.dot(_forward) * 0.45 * dt;
+          lateralVel += _riverCurrent.dot(_right) * 0.45 * dt;
         }
       } else {
         // WALK mode
@@ -1303,27 +1312,6 @@ export const ArcadeController: React.FC = () => {
       }
     }
 
-    // Update Contact Blob Shadow under Player/Vehicle (Chantier B)
-    if (blobShadowRef.current) {
-      const airHeight = Math.max(0, p.position.y - sp.prevGroundY);
-      const shadowScaleXZ = THREE.MathUtils.clamp(1.0 - airHeight * 0.14, 0.35, 1.0);
-      const isLongVehicle =
-        p.specialState === 'NONE' && (mode === 'BIKE' || mode === 'LONGBOARD' || mode === 'CANOE');
-      const lengthScale = isLongVehicle ? 1.85 : 1.0;
-      const widthScale = mode === 'CANOE' && p.specialState === 'NONE' ? 1.15 : 0.78;
-      blobShadowRef.current.scale.set(
-        widthScale * shadowScaleXZ,
-        lengthScale * shadowScaleXZ,
-        1
-      );
-      blobShadowRef.current.position.y = Math.max(-2.5, -airHeight + 0.035);
-      const shadowMat = blobShadowRef.current.material as THREE.MeshBasicMaterial;
-      shadowMat.opacity =
-        p.specialState === 'ZIPLINE'
-          ? 0.0
-          : THREE.MathUtils.clamp((1.0 - airHeight * 0.22) * 0.36, 0.06, 0.36);
-    }
-
     if (paddleRef.current && mode === 'CANOE') {
       const phase = p.paddlePhase;
       const side = p.paddleSide;
@@ -1364,22 +1352,6 @@ export const ArcadeController: React.FC = () => {
 
   return (
     <group ref={rootGroupRef}>
-      {/* Ground Contact Blob Shadow (Chantier B: prevents floating wheels look) */}
-      <mesh
-        ref={blobShadowRef}
-        position={[0, 0.035, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        renderOrder={1}
-      >
-        <circleGeometry args={[0.72, 16]} />
-        <meshBasicMaterial
-          color="#0b131e"
-          transparent
-          opacity={0.35}
-          depthWrite={false}
-        />
-      </mesh>
-
       <group ref={visualTiltRef}>
         <ExplorerCharacter
           mode={mode}

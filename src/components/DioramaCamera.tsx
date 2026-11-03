@@ -120,22 +120,22 @@ export const DioramaCamera: React.FC = () => {
       cam.updateProjectionMatrix();
     }
 
-    // High-speed tactile micro-vibration (stronger on rough dirt/rock than smooth asphalt)
+    // Subtle high-speed road vibration (soft & pleasant, divided by ~3x)
     const tNow = state.clock.elapsedTime;
     const surfaceRough =
       !p.isGrounded || p.specialState !== 'NONE'
-        ? 0.2
+        ? 0.15
         : p.surface === 'ROCK'
-          ? 1.35
+          ? 1.2
           : p.surface === 'DIRT'
-            ? 1.0
+            ? 0.85
             : p.surface === 'ASPHALT'
-              ? 0.42
-              : 1.15;
+              ? 0.35
+              : 0.9;
     const shakeAmp =
-      THREE.MathUtils.smoothstep(speed, 13.0, 34.0) * 0.095 * surfaceRough;
-    const shakeX = Math.sin(tNow * 37.0) * shakeAmp;
-    const shakeY = Math.cos(tNow * 49.0) * shakeAmp * 0.85;
+      THREE.MathUtils.smoothstep(speed, 14.0, 34.0) * 0.026 * surfaceRough;
+    const shakeX = Math.sin(tNow * 22.0) * shakeAmp;
+    const shakeY = Math.cos(tNow * 28.0) * shakeAmp * 0.75;
 
     // --- 1. "SKATE / ACTION" CLOSE THIRD-PERSON MODE (Toggled via Key V or Gamepad R3) ---
     if (p.cameraMode === 'COCKPIT' && p.specialState === 'NONE') {
@@ -186,14 +186,14 @@ export const DioramaCamera: React.FC = () => {
         CAMPFIRE_WORLD_POS.z - 0.5
       );
     } else {
-      // --- DYNAMIC LOW-SLUNG CHASE / CINEMA DIORAMA CAMERA ---
-    // Lower camera closer to the ground at high speeds so terrain rushes past faster
-    const baseHeight = THREE.MathUtils.lerp(4.8, 3.6, highSpeedSurge);
-    const baseBackDist = THREE.MathUtils.lerp(10.2, 8.4, highSpeedSurge);
+      // --- ELEVATED DIORAMA / LONELY MOUNTAINS OVERHEAD CAMERA ---
+      // Higher overhead vantage point (38° down-angle) for optimal course readability
+      const baseHeight = THREE.MathUtils.lerp(10.5, 14.5, speedRatio);
+      const baseBackDist = THREE.MathUtils.lerp(13.2, 17.5, speedRatio);
 
-      // Stationary contemplation pulls camera even lower to gaze up at the pine canopy & vista
-      const camHeight = THREE.MathUtils.lerp(baseHeight, 3.2, contemplationFactor);
-      const camBackDist = THREE.MathUtils.lerp(baseBackDist, 7.6, contemplationFactor);
+      // Stationary contemplation relaxes camera slightly
+      const camHeight = THREE.MathUtils.lerp(baseHeight, 9.0, contemplationFactor);
+      const camBackDist = THREE.MathUtils.lerp(baseBackDist, 11.8, contemplationFactor);
 
       // Hybrid chase vector: blends 65% behind player heading (-fwd) + 35% downhill (-Z)
       // so carving hairpins feels super dynamic while keeping downhill awareness!
@@ -204,24 +204,24 @@ export const DioramaCamera: React.FC = () => {
       const normChaseZ = chaseDirZ / chaseLen;
 
       // Subtle lateral swing on turns so the player carves across the frame
-      const lateralSwingX = -vel.x * 0.14 * (1 - contemplationFactor);
+      const lateralSwingX = -vel.x * 0.16 * (1 - contemplationFactor);
 
       const rawCamX = pos.x + normChaseX * camBackDist + lateralSwingX;
       const rawCamZ = pos.z + normChaseZ * camBackDist;
       const groundUnderCam = getTerrainHeightOnly(rawCamX, rawCamZ);
       // Ensure camera never clips into steep uphill terrain behind the player
-      const safeCamY = Math.max(pos.y + camHeight, groundUnderCam + 2.3);
+      const safeCamY = Math.max(pos.y + camHeight, groundUnderCam + 3.2);
 
       _desiredPos.set(rawCamX, safeCamY, rawCamZ);
 
-      // Look far ahead down the slope (14m to 22m ahead) so the valley vista & horizon fill the top of the frame
-      const lookAheadDist = THREE.MathUtils.lerp(13.0, 21.0, speedRatio) * (1 - contemplationFactor * 0.45);
+      // Look down on player with slight lead ahead down the trail
+      const lookAheadDist = THREE.MathUtils.lerp(6.5, 12.0, speedRatio) * (1 - contemplationFactor * 0.4);
       _forwardLead.copy(fwd).multiplyScalar(lookAheadDist);
-      _velLead.set(vel.x, vel.y * 0.3, vel.z).multiplyScalar(0.38 * (1 - contemplationFactor));
+      _velLead.set(vel.x, vel.y * 0.25, vel.z).multiplyScalar(0.28 * (1 - contemplationFactor));
 
       const lookTargetY = THREE.MathUtils.lerp(
-        pos.y + _velLead.y + 0.65 - speedRatio * 1.4,
-        pos.y + 1.45,
+        pos.y + 0.65,
+        pos.y + 1.1,
         contemplationFactor
       );
 

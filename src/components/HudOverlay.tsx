@@ -635,29 +635,29 @@ export const HudOverlay: React.FC = () => {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(12, 18, 17, 0.68)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
+            background: 'rgba(8, 14, 13, 0.76)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
             pointerEvents: 'auto',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: '24px',
+            padding: '20px',
             zIndex: 100,
           }}
         >
           <div
             style={{
-              background: 'rgba(20, 29, 27, 0.92)',
+              background: 'radial-gradient(130% 120% at 50% 0%, rgba(26, 42, 38, 0.96) 0%, rgba(13, 22, 20, 0.98) 100%)',
               border: '1px solid rgba(255, 255, 255, 0.12)',
               borderRadius: '24px',
-              padding: '28px 32px',
-              maxWidth: '580px',
+              padding: '26px 30px',
+              maxWidth: '620px',
               width: '100%',
-              boxShadow: '0 28px 80px rgba(0, 0, 0, 0.6)',
+              boxShadow: '0 36px 90px -10px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.16)',
               display: 'flex',
               flexDirection: 'column',
-              gap: '20px',
+              gap: '18px',
             }}
           >
             {/* Header: Title, Clock & Resume Button */}
@@ -667,32 +667,43 @@ export const HudOverlay: React.FC = () => {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                paddingBottom: '16px',
+                paddingBottom: '15px',
               }}
             >
               <div>
                 <div
                   style={{
-                    fontSize: '10.5px',
-                    fontWeight: 700,
-                    letterSpacing: '0.16em',
-                    color: '#a3b8b0',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    fontSize: '10px',
+                    fontWeight: 800,
+                    letterSpacing: '0.14em',
+                    color: '#06d6a0',
+                    background: 'rgba(6, 214, 160, 0.12)',
+                    border: '1px solid rgba(6, 214, 160, 0.25)',
+                    padding: '2px 8px',
+                    borderRadius: '999px',
                     textTransform: 'uppercase',
                   }}
                 >
-                  PARC NATIONAL BORÉAL • PAUSE
+                  🌲 PARC NATIONAL BORÉAL • PAUSE
                 </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginTop: '2px' }}>
-                  <span style={{ fontSize: '24px', fontWeight: 800, letterSpacing: '-0.01em' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginTop: '6px' }}>
+                  <span style={{ fontSize: '26px', fontWeight: 800, letterSpacing: '-0.02em', color: '#f8fafc' }}>
                     BOREAL FLOW
                   </span>
                   <span
                     ref={clockDomRef}
                     style={{
-                      fontSize: '14px',
+                      fontSize: '13px',
                       fontVariantNumeric: 'tabular-nums',
                       color: '#ffd166',
                       fontWeight: 700,
+                      background: 'rgba(255, 209, 102, 0.12)',
+                      padding: '2px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid rgba(255, 209, 102, 0.25)',
                     }}
                   >
                     17:30
@@ -704,8 +715,9 @@ export const HudOverlay: React.FC = () => {
                         fontWeight: 700,
                         color: '#ffd166',
                         background: 'rgba(255, 209, 102, 0.14)',
-                        padding: '2px 8px',
+                        padding: '3px 8px',
                         borderRadius: '999px',
+                        border: '1px solid rgba(255, 209, 102, 0.3)',
                       }}
                     >
                       🏆 Record : {triathlonPB.toFixed(1)}s
@@ -717,108 +729,181 @@ export const HudOverlay: React.FC = () => {
               <button
                 onClick={() => setPaused(false)}
                 style={{
-                  background: '#06d6a0',
-                  color: '#141d1b',
+                  background: 'linear-gradient(135deg, #06d6a0 0%, #05b386 100%)',
+                  color: '#0f1715',
                   border: 'none',
-                  borderRadius: '999px',
-                  padding: '10px 22px',
-                  fontSize: '13px',
+                  borderRadius: '12px',
+                  padding: '10px 18px',
+                  fontSize: '12.5px',
                   fontWeight: 800,
                   cursor: 'pointer',
+                  boxShadow: '0 4px 16px rgba(6, 214, 160, 0.35), inset 0 1px 0 rgba(255,255,255,0.4)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'transform 0.12s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'none';
                 }}
               >
-                ▶ Reprendre (Esc)
+                <span>▶ Reprendre</span>
+                <span
+                  style={{
+                    fontSize: '9.5px',
+                    fontWeight: 700,
+                    background: 'rgba(0, 0, 0, 0.22)',
+                    padding: '2px 5px',
+                    borderRadius: '4px',
+                  }}
+                >
+                  ESC
+                </span>
               </button>
             </div>
 
-            {/* Section 1: Teleport / Drop-In Locations */}
+            {/* Section 1: Teleport / Trailhead Grid */}
             <div>
-              <div style={sectionHeaderStyle}>⛰️ TÉLÉPORTATION / POINTS DE DÉPART</div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button
-                  onClick={() => {
-                    soundscape.init();
-                    respawnAt('SUMMIT_ROAD', 'LONGBOARD');
-                  }}
-                  style={journalBtnStyle('#eb5e46')}
-                >
-                  🛹 Sommet Route (Longboard)
-                </button>
-                <button
-                  onClick={() => {
-                    soundscape.init();
-                    respawnAt('SUMMIT_TRAIL', 'BIKE');
-                  }}
-                  style={journalBtnStyle('#52b788')}
-                >
-                  🚵 Sommet Singletrack (VTT)
-                </button>
-                <button
-                  onClick={() => {
-                    soundscape.init();
-                    respawnAt('LAKE_SHORE', 'CANOE');
-                  }}
-                  style={journalBtnStyle('#4ea8de')}
-                >
-                  🛶 Rapides d'Eau Vive (Kayak)
-                </button>
-                <button
-                  onClick={() => {
-                    soundscape.init();
-                    respawnAt('FIREWATCH_TOWER', 'WALK');
-                  }}
-                  style={journalBtnStyle('#ffd166')}
-                >
-                  🗼 Tour de Guet (Tyrolienne)
-                </button>
-                <button
-                  onClick={() => {
-                    soundscape.init();
-                    respawnAt('CAMPFIRE_HUB', 'WALK');
-                  }}
-                  style={journalBtnStyle('#ff9f1c')}
-                >
-                  🔥 Feu de Camp au Lac
-                </button>
+              <div style={sectionHeaderStyle}>⛰️ TÉLÉPORTATION & POINTS DE DÉPART</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                {TRAILHEADS.map((t, idx) => (
+                  <button
+                    key={t.id}
+                    onClick={() => {
+                      soundscape.init();
+                      respawnAt(t.id as any, t.mode);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      borderLeft: `3.5px solid ${t.accent}`,
+                      borderRadius: '12px',
+                      padding: '9px 12px',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      gridColumn: idx === 4 ? 'span 2' : 'span 1',
+                      transition: 'background 0.15s ease, border-color 0.15s ease, transform 0.12s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.09)';
+                      e.currentTarget.style.borderColor = `${t.accent}77`;
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%)';
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                      e.currentTarget.style.borderLeft = `3.5px solid ${t.accent}`;
+                      e.currentTarget.style.transform = 'none';
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '8px',
+                        background: `${t.accent}22`,
+                        fontSize: '17px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {t.icon}
+                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                      <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#f4f1ea' }}>
+                        {t.title}
+                      </span>
+                      <span style={{ fontSize: '10px', color: '#94a79f', marginTop: '1px' }}>
+                        {t.subtitle}
+                      </span>
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
 
             {/* Section 2: Atmosphere, Camera & Sound */}
-            <div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <div style={sectionHeaderStyle}>🌅 ATMOSPHÈRE, CAMÉRA & AUDIO</div>
-              <div style={{ display: 'flex', gap: '7px', flexWrap: 'wrap' }}>
-                <button onClick={() => handleTimePreset('DAWN')} style={smallPillStyle('#e8a598')}>
-                  🌅 Aube
-                </button>
-                <button onClick={() => handleTimePreset('NOON')} style={smallPillStyle('#8ecae6')}>
-                  ☀️ Midi
-                </button>
-                <button onClick={() => handleTimePreset('GOLDEN')} style={smallPillStyle('#ff9b54')}>
-                  🌇 Golden Hour
-                </button>
-                <button onClick={() => handleTimePreset('NIGHT')} style={smallPillStyle('#7ca5d8')}>
-                  🌙 Nuit (N)
-                </button>
-                <button onClick={toggleTimePause} style={smallPillStyle('#a3b8b0')}>
-                  {timeCyclePaused ? '▶️ Cycle Solaire' : '⏸️ Figer le Ciel'}
-                </button>
+              {/* Sky Presets Row */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(4, 1fr)',
+                  gap: '6px',
+                  background: 'rgba(0, 0, 0, 0.22)',
+                  padding: '4px',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(255, 255, 255, 0.06)',
+                }}
+              >
+                {[
+                  { label: 'Aube', icon: '🌅', id: 'DAWN' as const, col: '#fca5a5' },
+                  { label: 'Midi', icon: '☀️', id: 'NOON' as const, col: '#93c5fd' },
+                  { label: 'Golden', icon: '🌇', id: 'GOLDEN' as const, col: '#fdba74' },
+                  { label: 'Nuit (N)', icon: '🌙', id: 'NIGHT' as const, col: '#c4b5fd' },
+                ].map((preset) => (
+                  <button
+                    key={preset.id}
+                    onClick={() => handleTimePreset(preset.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '5px',
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      borderRadius: '8px',
+                      padding: '7px 8px',
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      color: preset.col,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+                    }}
+                  >
+                    <span>{preset.icon}</span>
+                    <span>{preset.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Utility Toggles */}
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button
                   onClick={() => {
                     soundscape.init();
                     toggleCameraMode();
                   }}
-                  style={smallPillStyle('#ff9b54')}
+                  style={utilPillStyle('#ffb703')}
                 >
-                  🎥 Vue : {cameraMode === 'COCKPIT' ? 'Cockpit (V)' : 'Diorama (V)'}
+                  {cameraMode === 'COCKPIT' ? '🎥 Vue : 🛹 Skate Proche (V)' : '🎥 Vue : 🏔️ Diorama Surplomb (V)'}
                 </button>
                 <button
                   onClick={() => {
                     soundscape.init();
                     toggleAudioMute();
                   }}
-                  style={smallPillStyle(audioMuted ? '#ef476f' : '#52b788')}
+                  style={utilPillStyle(audioMuted ? '#ef476f' : '#06d6a0')}
                 >
-                  {audioMuted ? '🔇 Audio Coupé' : '🔊 Son ASMR'}
+                  {audioMuted ? '🔇 Audio Coupé' : '🔊 Son ASMR (Actif)'}
+                </button>
+                <button onClick={toggleTimePause} style={utilPillStyle('#a3b8b0')}>
+                  {timeCyclePaused ? '▶️ Reprendre Ciel' : '⏸️ Figer Ciel'}
                 </button>
               </div>
             </div>
@@ -831,9 +916,24 @@ export const HudOverlay: React.FC = () => {
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
+                  marginBottom: '8px',
                 }}
               >
-                <span>📓 CARNET D'OBSERVATION ({discoveredBirds.length}/{WILDLIFE_SPECIES.length})</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>📓 CARNET D'OBSERVATION</span>
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      color: '#cbd5e1',
+                      padding: '2px 7px',
+                      borderRadius: '999px',
+                    }}
+                  >
+                    {discoveredBirds.length}/{WILDLIFE_SPECIES.length}
+                  </span>
+                </div>
                 <button
                   onClick={() => {
                     soundscape.init();
@@ -841,66 +941,87 @@ export const HudOverlay: React.FC = () => {
                     toggleBinoculars();
                   }}
                   style={{
-                    background: 'rgba(255, 209, 102, 0.16)',
+                    background: 'linear-gradient(135deg, rgba(255, 209, 102, 0.22) 0%, rgba(255, 209, 102, 0.08) 100%)',
                     color: '#ffd166',
                     border: '1px solid rgba(255, 209, 102, 0.4)',
                     borderRadius: '999px',
-                    padding: '3px 10px',
+                    padding: '4px 12px',
                     fontSize: '11px',
                     fontWeight: 700,
                     cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
                   }}
                 >
-                  🔭 Ouvrir les Jumelles (B)
+                  🔭 Mode Jumelles (B)
                 </button>
               </div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
                 {WILDLIFE_SPECIES.map((w) => {
                   const found = discoveredBirds.includes(w.id);
                   return (
-                    <span
+                    <div
                       key={w.id}
                       style={{
-                        fontSize: '11.5px',
-                        padding: '5px 11px',
-                        borderRadius: '999px',
-                        background: found ? 'rgba(6, 214, 160, 0.18)' : 'rgba(255,255,255,0.05)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '11px',
+                        padding: '6px 10px',
+                        borderRadius: '9px',
+                        background: found ? 'rgba(6, 214, 160, 0.12)' : 'rgba(255, 255, 255, 0.03)',
                         color: found ? '#06d6a0' : '#7c8f88',
-                        border: `1px solid ${found ? '#06d6a055' : 'rgba(255,255,255,0.06)'}`,
+                        border: `1px solid ${found ? 'rgba(6, 214, 160, 0.35)' : 'rgba(255, 255, 255, 0.05)'}`,
                         fontWeight: 600,
                       }}
                     >
-                      {found ? `✓ ${w.frenchName}` : `🔒 ${w.biome}`}
-                    </span>
+                      <span style={{ fontSize: '12px' }}>{found ? '✓' : '🔒'}</span>
+                      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                        <span style={{ fontWeight: 700, color: found ? '#f4f1ea' : '#889e95', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {found ? w.frenchName : w.name}
+                        </span>
+                        <span style={{ fontSize: '9.5px', color: found ? '#06d6a0aa' : '#5f736b' }}>
+                          {w.biome}
+                        </span>
+                      </div>
+                    </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* Footer: Compact Controls Guide */}
+            {/* Footer: Compact Keyboard & Gamepad Guide */}
             <div
               style={{
-                background: 'rgba(255, 255, 255, 0.04)',
-                borderRadius: '12px',
-                padding: '10px 14px',
+                background: 'rgba(0, 0, 0, 0.35)',
+                border: '1px solid rgba(255, 255, 255, 0.06)',
+                borderRadius: '14px',
+                padding: '11px 14px',
                 fontSize: '11px',
                 color: '#9ab0a7',
-                lineHeight: 1.6,
+                lineHeight: 1.7,
               }}
             >
-              <div>
-                <strong style={{ color: '#f4f1ea' }}>Clavier :</strong> WASD / Flèches (Diriger & Pousser) •{' '}
-                <strong style={{ color: '#f4f1ea' }}>Shift / S + Virage</strong> (Powerslide) •{' '}
-                <strong style={{ color: '#f4f1ea' }}>Espace</strong> (Saut / Ollie) •{' '}
-                <strong style={{ color: '#f4f1ea' }}>1–4</strong> (Équipement) •{' '}
-                <strong style={{ color: '#f4f1ea' }}>E</strong> (Action) •{' '}
-                <strong style={{ color: '#f4f1ea' }}>C</strong> (Sonnette)
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '3px' }}>
+                <strong style={{ color: '#f4f1ea', marginRight: '4px' }}>Clavier :</strong>
+                <span style={kbdChip}>W</span><span style={kbdChip}>A</span><span style={kbdChip}>S</span><span style={kbdChip}>D</span> <span style={{ color: '#6e857c' }}>Diriger</span> •{' '}
+                <span style={kbdChip}>Shift</span> + Virage <span style={{ color: '#6e857c' }}>Slide</span> •{' '}
+                <span style={kbdChip}>Espace</span> <span style={{ color: '#6e857c' }}>Saut</span> •{' '}
+                <span style={kbdChip}>1–4</span> <span style={{ color: '#6e857c' }}>Équipement</span> •{' '}
+                <span style={kbdChip}>V</span> <span style={{ color: '#6e857c' }}>Caméra</span> •{' '}
+                <span style={kbdChip}>E</span> <span style={{ color: '#6e857c' }}>Action</span>
               </div>
-              <div>
-                <strong style={{ color: gamepadConnected ? '#06d6a0' : '#f4f1ea' }}>
-                  {gamepadConnected ? '🎮 Manette Connectée :' : '🎮 Manette :'}
-                </strong>{' '}
-                Stick G (Diriger) • RT (Pousser) • LT / B (Powerslide) • A (Saut) • X (Action) • Croix (Équipement) • Start (Pause)
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '3px', marginTop: '4px' }}>
+                <strong style={{ color: gamepadConnected ? '#06d6a0' : '#c9d6d0', marginRight: '4px' }}>
+                  {gamepadConnected ? '🎮 Manette (Connectée) :' : '🎮 Manette :'}
+                </strong>
+                <span style={padChip}>Stick G</span> <span style={{ color: '#6e857c' }}>Diriger</span> •{' '}
+                <span style={padChip}>RT</span> <span style={{ color: '#6e857c' }}>Pousser</span> •{' '}
+                <span style={padChip}>LT / B</span> <span style={{ color: '#6e857c' }}>Slide</span> •{' '}
+                <span style={padChip}>A</span> <span style={{ color: '#6e857c' }}>Saut</span> •{' '}
+                <span style={padChip}>X</span> <span style={{ color: '#6e857c' }}>Action</span> •{' '}
+                <span style={padChip}>R3</span> <span style={{ color: '#6e857c' }}>Caméra</span>
               </div>
             </div>
           </div>
@@ -911,35 +1032,94 @@ export const HudOverlay: React.FC = () => {
 };
 
 const sectionHeaderStyle: React.CSSProperties = {
-  fontSize: '10.5px',
+  fontSize: '10px',
   fontWeight: 800,
-  letterSpacing: '0.12em',
+  letterSpacing: '0.14em',
   color: '#889e95',
-  marginBottom: '8px',
+  textTransform: 'uppercase',
+  marginBottom: '6px',
 };
 
-function journalBtnStyle(accent: string): React.CSSProperties {
-  return {
-    background: 'rgba(255, 255, 255, 0.05)',
-    color: '#f4f1ea',
-    border: `1px solid ${accent}77`,
-    padding: '8px 14px',
-    borderRadius: '999px',
-    fontSize: '12px',
-    fontWeight: 600,
-    cursor: 'pointer',
-  };
-}
+const TRAILHEADS = [
+  {
+    id: 'SUMMIT_ROAD',
+    mode: 'LONGBOARD' as const,
+    icon: '🛹',
+    title: 'Sommet Route (Longboard)',
+    subtitle: 'Col Alpin • Asphalte & Hairpins',
+    accent: '#eb5e46',
+  },
+  {
+    id: 'SUMMIT_TRAIL',
+    mode: 'BIKE' as const,
+    icon: '🚵',
+    title: 'Piste Red Bull Rampage (VTT)',
+    subtitle: 'Crêtes Rocailleuses & Tremplins',
+    accent: '#52b788',
+  },
+  {
+    id: 'LAKE_SHORE',
+    mode: 'CANOE' as const,
+    icon: '🛶',
+    title: "Rapides d'Eau Vive (Kayak)",
+    subtitle: 'Gorges & Glisse sur le Lac',
+    accent: '#4ea8de',
+  },
+  {
+    id: 'FIREWATCH_TOWER',
+    mode: 'WALK' as const,
+    icon: '🗼',
+    title: 'Tour de Guet (Tyrolienne)',
+    subtitle: 'Panorama & Tyrolienne 160m',
+    accent: '#ffd166',
+  },
+  {
+    id: 'CAMPFIRE_HUB',
+    mode: 'WALK' as const,
+    icon: '🔥',
+    title: 'Bivouac au Lac (Feu de Camp)',
+    subtitle: 'Tente A-Frame, Banc & Braises ASMR',
+    accent: '#ff9f1c',
+  },
+];
 
-function smallPillStyle(accent: string): React.CSSProperties {
+function utilPillStyle(accent: string): React.CSSProperties {
   return {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
     background: 'rgba(255, 255, 255, 0.05)',
     color: '#f4f1ea',
     border: `1px solid ${accent}55`,
-    padding: '6px 12px',
-    borderRadius: '999px',
+    padding: '7px 12px',
+    borderRadius: '10px',
     fontSize: '11.5px',
     fontWeight: 600,
     cursor: 'pointer',
+    transition: 'all 0.15s ease',
   };
 }
+
+const kbdChip: React.CSSProperties = {
+  display: 'inline-block',
+  padding: '1px 5px',
+  fontSize: '9.5px',
+  fontFamily: 'monospace',
+  fontWeight: 700,
+  color: '#f4f1ea',
+  background: 'rgba(255, 255, 255, 0.12)',
+  border: '1px solid rgba(255, 255, 255, 0.2)',
+  borderRadius: '4px',
+  boxShadow: '0 1px 0 rgba(0, 0, 0, 0.4)',
+};
+
+const padChip: React.CSSProperties = {
+  display: 'inline-block',
+  padding: '1px 6px',
+  fontSize: '9.5px',
+  fontWeight: 800,
+  color: '#06d6a0',
+  background: 'rgba(6, 214, 160, 0.12)',
+  border: '1px solid rgba(6, 214, 160, 0.3)',
+  borderRadius: '999px',
+};
