@@ -22,15 +22,16 @@ import {
 import { simplex2D } from '../math/noise';
 import { mutablePhysics } from '../state/gameStore';
 
-// Crisp "Firewatch / Lonely Mountains / A Short Hike" matte clay palette
+// Crisp "Canadian Rockies & Firewatch" matte clay palette (Banff / Jasper limestone & slate)
 const PALETTE = {
   GRASS_MID: new THREE.Color('#3b694c'),
   GRASS_WARM: new THREE.Color('#6b8e4e'),
-  ROCK_LIGHT: new THREE.Color('#7a8288'),
-  ROCK_DARK: new THREE.Color('#555d66'),
-  ROCK_STRATA: new THREE.Color('#444c54'),
-  RAMPAGE_OCHRE: new THREE.Color('#a45638'),
-  ALPINE_SNOW: new THREE.Color('#e8eff5'),
+  ROCK_LIGHT: new THREE.Color('#8e9ba7'), // Glacial weathered limestone
+  ROCK_DARK: new THREE.Color('#4a535c'),  // Dark slate & basalt cliffs
+  ROCK_STRATA: new THREE.Color('#343c44'), // Deep schist bedding bands
+  ROCKIES_SLATE: new THREE.Color('#56616c'), // Iconic Canadian Rockies slate grey
+  ROCKIES_DOLOMITE: new THREE.Color('#788592'), // High-altitude dolomite ridge
+  ALPINE_SNOW: new THREE.Color('#eef4f8'),
   SAND: new THREE.Color('#d2b48c'),
   LAKE_BED: new THREE.Color('#1c434d'),
   AO_SHADOW: new THREE.Color('#182b23'),
@@ -379,28 +380,28 @@ export const TerrainChunk: React.FC = () => {
       } else if (ny < 0.84 || sCode === 3) {
         const rockBlend = THREE.MathUtils.clamp((0.84 - ny) / 0.22, 0, 1);
         const strata = Math.sin(cy * 0.55 + simplex2D(cx * 0.03, cz * 0.03) * 2.2);
-        const isRampageZone = THREE.MathUtils.smoothstep(cy, 175, 240);
+        const isAlpineCrags = THREE.MathUtils.smoothstep(cy, 175, 245);
         const rockCol =
           strata > 0.48
-            ? isRampageZone > 0.3
-              ? PALETTE.RAMPAGE_OCHRE
+            ? isAlpineCrags > 0.3
+              ? PALETTE.ROCKIES_DOLOMITE
               : PALETTE.ROCK_STRATA
             : ny < 0.65
               ? PALETTE.ROCK_DARK
               : PALETTE.ROCK_LIGHT;
         tmpColor.lerp(rockCol, Math.max(sCode === 3 ? 0.88 : 0, rockBlend));
-        if (isRampageZone > 0.1 && ny < 0.88) {
-          tmpColor.lerp(PALETTE.RAMPAGE_OCHRE, isRampageZone * 0.42);
+        if (isAlpineCrags > 0.1 && ny < 0.88) {
+          tmpColor.lerp(PALETTE.ROCKIES_SLATE, isAlpineCrags * 0.45);
         }
       }
 
-      // High-altitude Red Bull Rampage & Canadian Rockies summit ridge (> 215m)
+      // High-altitude Canadian Rockies summit ridges & névés (> 215m)
       if (cy > 215) {
         const alpineRockT = THREE.MathUtils.smoothstep(cy, 215, 265);
-        tmpColor.lerp(PALETTE.ROCK_LIGHT, alpineRockT * 0.52);
-        if (cy > 268 && ny > 0.76) {
-          const snowT = THREE.MathUtils.smoothstep(cy + jitter * 180, 268, 315);
-          tmpColor.lerp(PALETTE.ALPINE_SNOW, snowT * 0.78);
+        tmpColor.lerp(PALETTE.ROCKIES_DOLOMITE, alpineRockT * 0.58);
+        if (cy > 265 && ny > 0.74) {
+          const snowT = THREE.MathUtils.smoothstep(cy + jitter * 180, 265, 315);
+          tmpColor.lerp(PALETTE.ALPINE_SNOW, snowT * 0.82);
         }
       }
 
