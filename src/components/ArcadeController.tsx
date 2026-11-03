@@ -1178,9 +1178,17 @@ export const ArcadeController: React.FC = () => {
       } else if (mode === 'CANOE') {
         const stroke = Math.sin(p.paddlePhase);
         const side = p.paddleSide;
-        torsoRef.current.rotation.set(0.18 + stroke * 0.16, -side * 0.22, -side * 0.08);
-        leftArmRef.current.rotation.set(-0.95 + stroke * 0.42, -side * 0.25, side > 0 ? -0.35 : 0.15);
-        rightArmRef.current.rotation.set(-0.95 + stroke * 0.42, -side * 0.25, side < 0 ? 0.35 : -0.15);
+        // Turn torso toward the active paddle side (+Y rotation swings +Z chest toward +X!)
+        torsoRef.current.rotation.set(0.18 + stroke * 0.14, side * 0.24, -side * 0.06);
+        if (side >= 0) {
+          // Paddle on +X side: RightArm (+0.23) is lower shaft hand, LeftArm (-0.23) reaches up/across to T-grip
+          rightArmRef.current.rotation.set(-1.12 + stroke * 0.38, 0, 0.14);
+          leftArmRef.current.rotation.set(-1.42 + stroke * 0.38, 0, 0.52);
+        } else {
+          // Paddle on -X side: LeftArm (-0.23) is lower shaft hand, RightArm (+0.23) reaches up/across to T-grip
+          leftArmRef.current.rotation.set(-1.12 + stroke * 0.38, 0, -0.14);
+          rightArmRef.current.rotation.set(-1.42 + stroke * 0.38, 0, -0.52);
+        }
         leftLegRef.current.rotation.set(-1.32, 0.1, 0);
         rightLegRef.current.rotation.set(-1.32, -0.1, 0);
       } else {
@@ -1254,15 +1262,15 @@ export const ArcadeController: React.FC = () => {
       const side = p.paddleSide;
       paddleRef.current.position.x = THREE.MathUtils.damp(
         paddleRef.current.position.x,
-        side * 0.36,
-        10,
+        side * 0.28,
+        12,
         dt
       );
-      paddleRef.current.position.y = 0.56 - Math.max(0, Math.sin(phase)) * 0.08;
-      paddleRef.current.position.z = 0.26;
-      // Positive rotation.z when side=+1 tilts bottom (-Y blade) outward toward +X into the water!
-      paddleRef.current.rotation.z = side * (0.34 + Math.cos(phase) * 0.1);
-      paddleRef.current.rotation.x = -Math.sin(phase) * 0.52;
+      paddleRef.current.position.y = 0.54 - Math.max(0, Math.sin(phase)) * 0.06;
+      paddleRef.current.position.z = 0.32 - Math.sin(phase) * 0.08;
+      // Positive rotation.z when side=+1 tilts bottom (-Y blade) outward to +X and top (+Y T-grip) inward to +0.12!
+      paddleRef.current.rotation.z = side * (0.38 + Math.cos(phase) * 0.08);
+      paddleRef.current.rotation.x = Math.sin(phase) * 0.42;
     }
 
     // 9. Automatic Warm Front Headlamp at Dusk/Night
