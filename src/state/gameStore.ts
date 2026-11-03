@@ -104,6 +104,9 @@ export interface MutablePhysicsState {
   paddlePhase: number;
   surface: SurfaceType;
   waterDepth: number;
+  // Session 3: Dynamic Vehicle Audio & Input States
+  isPedaling: boolean;
+  steerInput: number;
   // Phase 2: Day/Night mutable clock
   timeOfDay: number;
   nightFactor: number;
@@ -151,6 +154,8 @@ export const mutablePhysics: MutablePhysicsState = {
   paddlePhase: 0,
   surface: 'ASPHALT',
   waterDepth: 0,
+  isPedaling: false,
+  steerInput: 0,
   timeOfDay: 17.5,
   nightFactor: 0,
   headlampOn: false,

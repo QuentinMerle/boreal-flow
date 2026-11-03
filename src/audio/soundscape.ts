@@ -27,6 +27,15 @@ class BorealSoundscape {
   private aeroFilter: BiquadFilterNode | null = null;
   private aeroGain: GainNode | null = null;
 
+  // Session 3: VTT Star Ratchet Freehub Buzz ("Angry Bee" coasting clicking)
+  private freehubOsc: OscillatorNode | null = null;
+  private freehubFilter: BiquadFilterNode | null = null;
+  private freehubGain: GainNode | null = null;
+
+  // Session 3: VTT Knobby Tire Dirt Gravel Bite / Loam Tear
+  private knobbyFilter: BiquadFilterNode | null = null;
+  private knobbyGain: GainNode | null = null;
+
   private zipOsc: OscillatorNode | null = null;
   private zipGain: GainNode | null = null;
 
@@ -190,6 +199,36 @@ class BorealSoundscape {
     this.fireFilter.connect(this.fireGain);
     this.fireGain.connect(this.masterGain);
     fireSource.start(2.3);
+
+    // 7. Session 3: VTT Star Ratchet Freehub Buzz Loop (Coasting clicking)
+    this.freehubOsc = this.ctx.createOscillator();
+    this.freehubOsc.type = 'sawtooth';
+    this.freehubOsc.frequency.value = 180;
+    this.freehubFilter = this.ctx.createBiquadFilter();
+    this.freehubFilter.type = 'bandpass';
+    this.freehubFilter.frequency.value = 3400;
+    this.freehubFilter.Q.value = 4.2; // Crisp metallic click resonance
+    this.freehubGain = this.ctx.createGain();
+    this.freehubGain.gain.value = 0.0;
+    this.freehubOsc.connect(this.freehubFilter);
+    this.freehubFilter.connect(this.freehubGain);
+    this.freehubGain.connect(this.masterGain);
+    this.freehubOsc.start();
+
+    // 8. Session 3: VTT Knobby Tire Dirt Gravel Bite Loop
+    const knobbySource = this.ctx.createBufferSource();
+    knobbySource.buffer = this.noiseBuffer;
+    knobbySource.loop = true;
+    this.knobbyFilter = this.ctx.createBiquadFilter();
+    this.knobbyFilter.type = 'bandpass';
+    this.knobbyFilter.frequency.value = 1450;
+    this.knobbyFilter.Q.value = 2.4;
+    this.knobbyGain = this.ctx.createGain();
+    this.knobbyGain.gain.value = 0.0;
+    knobbySource.connect(this.knobbyFilter);
+    this.knobbyFilter.connect(this.knobbyGain);
+    this.knobbyGain.connect(this.masterGain);
+    knobbySource.start(1.4);
 
     this.lastPoofCounter = mutablePhysics.poofCounter;
     this.lastEmoteCounter = mutablePhysics.emoteCounter;
@@ -449,6 +488,78 @@ class BorealSoundscape {
     }
   }
 
+  // Session 3: VTT & Longboard Suspension Squish / Shock Absorber Puff
+  public triggerLandingSquish(impactVel: number) {
+    if (!this.initialized || !this.ctx || !this.noiseBuffer || !this.masterGain || this.isMuted) return;
+    const now = this.ctx.currentTime;
+    const strength = THREE.MathUtils.clamp((impactVel - 2.5) / 10.0, 0.15, 1.0);
+
+    // 1. High-speed hydraulic fork valve puff ("pshhht")
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1100, now);
+    filter.frequency.exponentialRampToValueAtTime(320, now + 0.16);
+    filter.Q.value = 1.8;
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.01, now);
+    gain.gain.linearRampToValueAtTime(0.20 * strength, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.002, now + 0.18);
+
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+    src.start(now, Math.random() * 2, 0.20);
+
+    // 2. Sub-bass tire casing compression thud
+    const osc = this.ctx.createOscillator();
+    const oscGain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(95, now);
+    osc.frequency.exponentialRampToValueAtTime(35, now + 0.14);
+    oscGain.gain.setValueAtTime(0.14 * strength, now);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    osc.connect(oscGain);
+    oscGain.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + 0.16);
+  }
+
+  // Session 3: Lonely Mountains Instant Checkpoint Rewind Reverse Whoosh & Bell
+  public triggerRewindWhoosh() {
+    if (!this.initialized || !this.ctx || !this.masterGain || this.isMuted) return;
+    const now = this.ctx.currentTime;
+
+    // 1. Spectral ascending tape reverse sweep
+    const osc = this.ctx.createOscillator();
+    const oscGain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(160, now);
+    osc.frequency.exponentialRampToValueAtTime(740, now + 0.16);
+    oscGain.gain.setValueAtTime(0.01, now);
+    oscGain.gain.linearRampToValueAtTime(0.19, now + 0.08);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+    osc.connect(oscGain);
+    oscGain.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + 0.24);
+
+    // 2. Sparkling rewind chime
+    const chime = this.ctx.createOscillator();
+    const chimeGain = this.ctx.createGain();
+    chime.type = 'sine';
+    chime.frequency.setValueAtTime(1174.66, now + 0.05); // D6
+    chimeGain.gain.setValueAtTime(0.001, now + 0.05);
+    chimeGain.gain.linearRampToValueAtTime(0.12, now + 0.08);
+    chimeGain.gain.exponentialRampToValueAtTime(0.0008, now + 0.35);
+    chime.connect(chimeGain);
+    chimeGain.connect(this.masterGain);
+    chime.start(now + 0.05);
+    chime.stop(now + 0.38);
+  }
+
   private triggerSpatialBirdCall(bird: WildlifeSpecies) {
     if (!this.initialized || !this.ctx || !this.masterGain || this.isMuted) return;
     const p = mutablePhysics;
@@ -537,6 +648,8 @@ class BorealSoundscape {
       if (this.aeroGain) this.aeroGain.gain.setTargetAtTime(0, now, 0.08);
       if (this.rollGain) this.rollGain.gain.setTargetAtTime(0, now, 0.08);
       if (this.urethaneOscGain) this.urethaneOscGain.gain.setTargetAtTime(0, now, 0.08);
+      if (this.freehubGain) this.freehubGain.gain.setTargetAtTime(0, now, 0.08);
+      if (this.knobbyGain) this.knobbyGain.gain.setTargetAtTime(0, now, 0.08);
       if (this.driftGain) this.driftGain.gain.setTargetAtTime(0, now, 0.08);
       if (this.waterGain) this.waterGain.gain.setTargetAtTime(0, now, 0.08);
       if (this.zipGain) this.zipGain.gain.setTargetAtTime(0, now, 0.08);
@@ -577,6 +690,7 @@ class BorealSoundscape {
     if (this.rollFilter && this.rollGain && this.urethaneOsc && this.urethaneOscGain) {
       if (onLand && p.speed > 0.6 && mode !== 'WALK') {
         const isAsphalt = p.surface === 'ASPHALT';
+        const isLongboard = mode === 'LONGBOARD';
         const baseFreq = isAsphalt ? 190 : 950;
         const freqSpan = isAsphalt ? 320 : 1400;
         this.rollFilter.frequency.setTargetAtTime(baseFreq + speedRatio * freqSpan, now, 0.06);
@@ -587,12 +701,59 @@ class BorealSoundscape {
           0.06
         );
 
-        const humGain = isAsphalt && mode === 'LONGBOARD' ? speedRatio * 0.035 : 0;
-        this.urethaneOsc.frequency.setTargetAtTime(85 + speedRatio * 145, now, 0.06);
+        // Longboard Buttery Urethane Roll & Carve Scrub
+        const carveSlip = isLongboard && isAsphalt
+          ? Math.min(1.0, Math.abs(p.lateralSpeed) * 0.35 + Math.abs(p.steerInput || 0) * 0.35)
+          : 0;
+        const humGain = isAsphalt && isLongboard ? speedRatio * (0.038 + carveSlip * 0.024) : 0;
+        this.urethaneOsc.frequency.setTargetAtTime(85 + speedRatio * 145 + carveSlip * 32, now, 0.06);
         this.urethaneOscGain.gain.setTargetAtTime(humGain, now, 0.08);
       } else {
         this.rollGain.gain.setTargetAtTime(0, now, 0.06);
         this.urethaneOscGain.gain.setTargetAtTime(0, now, 0.06);
+      }
+    }
+
+    // 2b. Session 3: VTT Star Ratchet Freehub Buzz ("Angry Bee" coasting clicking at 140-420 Hz)
+    if (this.freehubOsc && this.freehubFilter && this.freehubGain) {
+      const isCoasting =
+        mode === 'BIKE' &&
+        !p.isPedaling &&
+        p.speed > 1.8 &&
+        p.isGrounded &&
+        p.surface !== 'WATER' &&
+        p.specialState === 'NONE';
+
+      if (isCoasting) {
+        const ratchetFreq = 135 + speedRatio * 310;
+        const ratchetVol = Math.min(0.20, 0.04 + speedRatio * 0.16);
+        this.freehubOsc.frequency.setTargetAtTime(ratchetFreq, now, 0.03);
+        this.freehubFilter.frequency.setTargetAtTime(3200 + speedRatio * 600, now, 0.05);
+        this.freehubGain.gain.setTargetAtTime(ratchetVol, now, 0.04);
+      } else {
+        this.freehubGain.gain.setTargetAtTime(0, now, 0.025);
+      }
+    }
+
+    // 2c. Session 3: VTT Knobby Tire Dirt Gravel Bite / Loam Tear
+    if (this.knobbyFilter && this.knobbyGain) {
+      const onDirt =
+        mode === 'BIKE' &&
+        p.surface === 'DIRT' &&
+        p.isGrounded &&
+        p.speed > 1.2 &&
+        p.specialState === 'NONE';
+
+      if (onDirt) {
+        const tireSlip = Math.min(
+          1.0,
+          Math.abs(p.lateralSpeed) * 0.40 + Math.abs(p.steerInput || 0) * 0.45
+        );
+        const biteVol = speedRatio * (0.09 + tireSlip * 0.22);
+        this.knobbyGain.gain.setTargetAtTime(Math.min(0.28, biteVol), now, 0.04);
+        this.knobbyFilter.frequency.setTargetAtTime(1380 + tireSlip * 520, now, 0.05);
+      } else {
+        this.knobbyGain.gain.setTargetAtTime(0, now, 0.05);
       }
     }
 

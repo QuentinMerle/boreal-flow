@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { fbm2D, simplex2D } from '../math/noise';
-import { SurfaceType } from '../state/gameStore';
+import { SurfaceType, MovementMode } from '../state/gameStore';
 
 // Session 3 Upgrade: 1,600m "Red Bull Rampage -> Boreal Forest -> Mirror Lake" Megamap
 export const TERRAIN_WIDTH = 440; // X: -220 to +220
@@ -251,16 +251,20 @@ function evaluatePoint(x: number, z: number): {
     rawH = THREE.MathUtils.lerp(rawH, riverBedH, canyonBlend);
   }
 
-  // Dirt trail carving profile: wide 6.0m flat shelf + pure analytical kicker in Z
-  // (Guarantees all 4 corners of any bilinear grid cell under the bike are 100% free of mountain noise!)
-  const dirtTargetElev = smoothSlopeH + 1.15 + evaluateAnalyticalDirtKicker(z);
-  const dirtFlatten = 1.0 - THREE.MathUtils.smoothstep(dirtDist, 6.0, 13.0);
+  // Dirt trail carving profile: 5.5m parabolic bobsleigh bowl + pure analytical kicker in Z
+  // Incurved cuvette profile: center is sunken (-0.22m) and lateral berms rise (+0.38m)
+  // This physically creates an inward normal gradient that funnels bikes towards the center and prevents uphill rollback!
+  const dirtNormDist = Math.min(1.0, dirtDist / 4.4);
+  const dirtCuvette = dirtNormDist * dirtNormDist * 0.60 - 0.22;
+  const dirtTargetElev = smoothSlopeH + 1.15 + dirtCuvette + evaluateAnalyticalDirtKicker(z);
+  const dirtFlatten = 1.0 - THREE.MathUtils.smoothstep(dirtDist, 5.5, 12.0);
   rawH = THREE.MathUtils.lerp(rawH, dirtTargetElev, dirtFlatten);
 
-  // Road flattening profile: wide 8.2m flat shelf + pure analytical smoothSlopeH + 1.25
-  // (Guarantees all 4 corners of any bilinear grid cell on the road are 100% glass-smooth!)
-  const roadTargetElev = smoothSlopeH + 1.25;
-  const roadFlatten = 1.0 - THREE.MathUtils.smoothstep(roadDist, 8.2, 16.5);
+  // Road flattening profile: wide 8.0m corridor with subtle 0.20m banking bowl
+  const roadNormDist = Math.min(1.0, roadDist / 5.2);
+  const roadCuvette = roadNormDist * roadNormDist * 0.30 - 0.10;
+  const roadTargetElev = smoothSlopeH + 1.25 + roadCuvette;
+  const roadFlatten = 1.0 - THREE.MathUtils.smoothstep(roadDist, 8.0, 15.5);
   rawH = THREE.MathUtils.lerp(rawH, roadTargetElev, roadFlatten);
 
   // Determine dominant surface code
@@ -735,4 +739,53 @@ export function computeCanopyAmbientOcclusion(x: number, z: number): number {
     }
   }
   return ao;
+}
+
+/**
+ * Fast zero-allocation upstream checkpoint locator for Lonely Mountains [R] instant rewind.
+ * Samples ~38m uphill along the active trajectory and outputs downhill position & tangent.
+ */
+export function getUpstreamCheckpoint(
+  x: number,
+  z: number,
+  mode: MovementMode,
+  outPos: THREE.Vector3,
+  outTangent: THREE.Vector3
+): { yaw: number; speed: number } {
+  let curve: THREE.CatmullRomCurve3;
+  let samples: SampledSplinePoint[];
+
+  if (mode === 'CANOE' && z > -330) {
+    curve = riverCurve;
+    samples = riverSamples;
+  } else if (mode === 'BIKE') {
+    curve = dirtCurve;
+    samples = dirtSamples;
+  } else {
+    const roadHit = findClosestSplineSample(asphaltSamples, x, z, 48);
+    const dirtHit = findClosestSplineSample(dirtSamples, x, z, 42);
+    if (dirtHit.distSq < roadHit.distSq * 0.7) {
+      curve = dirtCurve;
+      samples = dirtSamples;
+    } else {
+      curve = asphaltCurve;
+      samples = asphaltSamples;
+    }
+  }
+
+  const hit = findClosestSplineSample(samples, x, z, 140);
+  const curT = hit.sample ? hit.sample.t : THREE.MathUtils.clamp((z + 765) / 1245, 0, 1);
+
+  // Offset ~38m upstream along track (dt ~= 38 / 1250 ~= 0.030)
+  const targetT = THREE.MathUtils.clamp(curT - 0.030, 0.008, 0.992);
+
+  curve.getPoint(targetT, outPos);
+  curve.getTangent(targetT, outTangent);
+  outTangent.normalize();
+
+  outPos.y = getTerrainHeightOnly(outPos.x, outPos.z) + 0.35;
+  const yaw = Math.atan2(outTangent.x, outTangent.z);
+  const speed = 7.0; // 25 km/h instant roll-in momentum
+
+  return { yaw, speed };
 }

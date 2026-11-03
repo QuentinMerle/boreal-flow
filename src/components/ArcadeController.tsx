@@ -23,6 +23,7 @@ import {
   KICKER_Z_CENTERS,
   getRiverCurrentVector,
   queryObstacleCollision,
+  getUpstreamCheckpoint,
 } from '../world/terrainData';
 import {
   TRANSITION_STATIONS,
@@ -52,6 +53,8 @@ const _slopeForward = new THREE.Vector3();
 const _slopeRight = new THREE.Vector3();
 const _zipPos = new THREE.Vector3();
 const _zipNext = new THREE.Vector3();
+const _checkpointPos = new THREE.Vector3();
+const _checkpointTan = new THREE.Vector3();
 
 interface InputState {
   forward: boolean;
@@ -253,6 +256,50 @@ export const ArcadeController: React.FC = () => {
     }
   };
 
+  // Session 3: Lonely Mountains Instant Rewind Handler (KeyR / Gamepad View)
+  const executeRewind = (forceSummit = false) => {
+    const p = mutablePhysics;
+    const sp = springState.current;
+    const currentMode = useGameStore.getState().mode;
+
+    // If currently in a special activity state (Campfire / Zipline), or already at the summit (< -680), or Shift was held:
+    if (forceSummit || p.specialState !== 'NONE' || p.position.z < -680) {
+      useGameStore.getState().respawnAt(useGameStore.getState().spawnTarget);
+      return;
+    }
+
+    // Dynamic rewind ~38m upstream on active route
+    const { yaw, speed } = getUpstreamCheckpoint(
+      p.position.x,
+      p.position.z,
+      currentMode,
+      _checkpointPos,
+      _checkpointTan
+    );
+
+    p.position.copy(_checkpointPos);
+    p.yaw = yaw;
+    p.speed = speed;
+    p.velocity.set(_checkpointTan.x * speed, _checkpointTan.y * speed, _checkpointTan.z * speed);
+    p.lateralSpeed = 0;
+    p.isGrounded = true;
+
+    // Reset physics springs, bounce & tumble
+    sp.roll = 0;
+    sp.pitch = 0;
+    sp.carveYaw = 0;
+    sp.bounceVel = 0;
+    sp.bounceY = 0;
+    sp.smoothSteer = 0;
+    sp.crashCooldown = 0;
+    sp.prevGroundY = p.position.y;
+    sp.prevClimbVel = 0;
+
+    // Audio & particles
+    soundscape.triggerRewindWhoosh();
+    triggerPoofEffect(p.position);
+  };
+
   // Keyboard listener
   useEffect(() => {
     const unlockAudio = () => soundscape.init();
@@ -296,7 +343,7 @@ export const ArcadeController: React.FC = () => {
         useGameStore.getState().toggleCameraMode();
       }
       if (code === 'KeyR') {
-        useGameStore.getState().respawnAt(useGameStore.getState().spawnTarget);
+        executeRewind(e.shiftKey);
       }
     };
 
@@ -432,10 +479,10 @@ export const ArcadeController: React.FC = () => {
         triggerHaptic(pad, 80, 0.3, 0.2);
       }
 
-      // Button 8 (View / Back): Respawn
+      // Button 8 (View / Back): Lonely Mountains Instant Rewind
       if (wasJustPressed(8)) {
-        useGameStore.getState().respawnAt(useGameStore.getState().spawnTarget);
-        triggerHaptic(pad, 90, 0.5, 0.3);
+        executeRewind(false);
+        triggerHaptic(pad, 100, 0.5, 0.4);
       }
 
       // Button 9 (Menu / Start): Toggle Pause Menu
@@ -496,6 +543,8 @@ export const ArcadeController: React.FC = () => {
     const accelInput = Math.max(inp.forward ? 1.0 : 0.0, padGas, Math.max(0, padMove));
     const brakeInput = Math.max(inp.backward ? 1.0 : 0.0, padBrake, Math.max(0, -padMove));
     const isBraking = brakeInput > 0.15;
+    p.steerInput = steerInput;
+    p.isPedaling = accelInput > 0.08 && mode === 'BIKE';
 
     // --- BINOCULARS LOOK MODE ---
     if (binocularsActive) {
@@ -1005,8 +1054,9 @@ export const ArcadeController: React.FC = () => {
           p.position.y - targetFloorY < 1.65)
       ) {
         // Active Downforce: hug steep downhill transitions without flying off the mountain!
-        if (!wasGroundedBeforeStep && p.velocity.y < -6.0) {
+        if (!wasGroundedBeforeStep && p.velocity.y < -2.8) {
           sp.bounceVel = Math.max(-3.5, p.velocity.y * 0.18);
+          soundscape.triggerLandingSquish(Math.abs(p.velocity.y));
           triggerHaptic(pad, 110, Math.min(1, Math.abs(p.velocity.y) / 16), 0.45);
         }
         p.position.y = targetFloorY;

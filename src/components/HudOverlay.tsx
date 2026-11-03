@@ -1008,6 +1008,7 @@ export const HudOverlay: React.FC = () => {
                 <span style={kbdChip}>W</span><span style={kbdChip}>A</span><span style={kbdChip}>S</span><span style={kbdChip}>D</span> <span style={{ color: '#6e857c' }}>Diriger</span> •{' '}
                 <span style={kbdChip}>Shift</span> + Virage <span style={{ color: '#6e857c' }}>Slide</span> •{' '}
                 <span style={kbdChip}>Espace</span> <span style={{ color: '#6e857c' }}>Saut</span> •{' '}
+                <span style={kbdChip}>R</span> <span style={{ color: '#06d6a0', fontWeight: 700 }}>Rewind 40m</span> (<span style={{ color: '#6e857c' }}>Shift+R Sommet</span>) •{' '}
                 <span style={kbdChip}>1–4</span> <span style={{ color: '#6e857c' }}>Équipement</span> •{' '}
                 <span style={kbdChip}>V</span> <span style={{ color: '#6e857c' }}>Caméra</span> •{' '}
                 <span style={kbdChip}>E</span> <span style={{ color: '#6e857c' }}>Action</span>
@@ -1020,6 +1021,7 @@ export const HudOverlay: React.FC = () => {
                 <span style={padChip}>RT</span> <span style={{ color: '#6e857c' }}>Pousser</span> •{' '}
                 <span style={padChip}>LT / B</span> <span style={{ color: '#6e857c' }}>Slide</span> •{' '}
                 <span style={padChip}>A</span> <span style={{ color: '#6e857c' }}>Saut</span> •{' '}
+                <span style={padChip}>Back</span> <span style={{ color: '#06d6a0', fontWeight: 700 }}>Rewind 40m</span> •{' '}
                 <span style={padChip}>X</span> <span style={{ color: '#6e857c' }}>Action</span> •{' '}
                 <span style={padChip}>R3</span> <span style={{ color: '#6e857c' }}>Caméra</span>
               </div>
@@ -1053,8 +1055,8 @@ const TRAILHEADS = [
     id: 'SUMMIT_TRAIL',
     mode: 'BIKE' as const,
     icon: '🚵',
-    title: 'Piste Red Bull Rampage (VTT)',
-    subtitle: 'Crêtes Rocailleuses & Tremplins',
+    title: 'Crêtes des Rocheuses (VTT)',
+    subtitle: 'Calcaire, Schiste & Flow Singletrack',
     accent: '#52b788',
   },
   {
