@@ -748,7 +748,7 @@ export const ArcadeController: React.FC = () => {
         } else if (downhillDot >= 0) {
           // Downhill gravity acceleration: rewards steep lines & Aero Tuck
           const tuckGravityBoost = isAeroAttackTuck ? 1.32 : 1.0;
-          const gravityAccel = 24.5 * preset.gravityScale * tuckGravityBoost;
+          const gravityAccel = 15.0 * preset.gravityScale * tuckGravityBoost;
           forwardVel += downhillDot * gravityAccel * dt;
         } else {
           // Strong uphill gravity resistance: prevents flying uphill at 70 km/h!
@@ -908,6 +908,24 @@ export const ArcadeController: React.FC = () => {
 
       const drag = preset.rollingResistance * surfaceDragMultiplier;
       forwardVel = THREE.MathUtils.damp(forwardVel, 0, drag, dt);
+
+      // Aerodynamic wind drag: quadratic air resistance (F_aero ~ v^2)
+      // Balances speed around 38-50 km/h on gentle slopes, 65-75 km/h on drops, 80+ km/h only when tucked!
+      if (mode === 'LONGBOARD' || mode === 'BIKE') {
+        const aeroDragCoeff = isAeroAttackTuck ? 0.0016 : (mode === 'LONGBOARD' ? 0.0038 : 0.0044);
+        const aeroDecel = forwardVel * Math.abs(forwardVel) * aeroDragCoeff;
+        forwardVel -= aeroDecel * dt;
+      }
+
+      // Carve Scrubbing: leaning hard into tight turns scrubs tire/wheel friction against the ground
+      if ((mode === 'LONGBOARD' || mode === 'BIKE') && p.isGrounded && !p.isDrifting) {
+        const steerMagnitude = Math.abs(steerInput);
+        if (steerMagnitude > 0.20 && forwardVel > 7.0) {
+          const scrubRate = mode === 'LONGBOARD' ? 3.4 : 2.8;
+          const scrubDecel = (steerMagnitude - 0.20) * scrubRate * (forwardVel / preset.maxSpeed);
+          forwardVel = Math.max(0, forwardVel - scrubDecel * dt);
+        }
+      }
 
       if (isBraking && mode !== 'WALK') {
         if (forwardVel > 0.5) {

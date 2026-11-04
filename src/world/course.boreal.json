@@ -65,85 +65,224 @@
         {
           "id": "green-wp-1",
           "type": "WAYPOINT",
-          "position": [-12, 310, -715],
+          "position": [-24, 320, -735],
           "corridorWidth": 8.0,
           "targetSpeedKmh": 35
+        },
+        {
+          "id": "green-wp-2",
+          "type": "WAYPOINT",
+          "position": [14, 305, -700],
+          "corridorWidth": 8.0,
+          "targetSpeedKmh": 40
+        },
+        {
+          "id": "green-hairpin-1-in",
+          "type": "WAYPOINT",
+          "position": [48, 290, -665],
+          "corridorWidth": 8.5,
+          "targetSpeedKmh": 45
         },
         {
           "id": "green-berm-1",
           "type": "BERM",
           "turnDirection": "RIGHT",
-          "position": [-68, 265, -610],
-          "radiusMeters": 28,
-          "arcDegrees": 115,
-          "wallHeightMeters": 0.35,
-          "corridorWidth": 8.4
+          "position": [78, 275, -638],
+          "radiusMeters": 24,
+          "arcDegrees": 140,
+          "wallHeightMeters": 0.45,
+          "corridorWidth": 8.8
         },
         {
-          "id": "green-fork-1",
-          "type": "FORK",
-          "position": [48, 220, -495],
-          "divergingLineIds": ["LINE_GREEN", "LINE_BLUE"],
-          "signpostLabel": "Embranchement Singletrack VTT",
-          "recommendedMode": "LONGBOARD"
+          "id": "green-hairpin-1-out",
+          "type": "WAYPOINT",
+          "position": [38, 260, -615],
+          "corridorWidth": 8.2,
+          "targetSpeedKmh": 45
+        },
+        {
+          "id": "green-hairpin-2-in",
+          "type": "WAYPOINT",
+          "position": [-28, 254, -585],
+          "corridorWidth": 8.2,
+          "targetSpeedKmh": 50
         },
         {
           "id": "green-berm-2",
           "type": "BERM",
           "turnDirection": "LEFT",
-          "position": [-76, 175, -370],
-          "radiusMeters": 32,
-          "arcDegrees": 125,
-          "wallHeightMeters": 0.40,
-          "corridorWidth": 8.2
+          "position": [-78, 248, -555],
+          "radiusMeters": 26,
+          "arcDegrees": 145,
+          "wallHeightMeters": 0.50,
+          "corridorWidth": 9.0
         },
         {
-          "id": "green-wp-2",
+          "id": "green-hairpin-2-out",
           "type": "WAYPOINT",
-          "position": [52, 135, -245],
-          "corridorWidth": 8.0,
-          "targetSpeedKmh": 55
-        },
-        {
-          "id": "green-berm-3",
-          "type": "BERM",
-          "turnDirection": "RIGHT",
-          "position": [-72, 98, -115],
-          "radiusMeters": 29,
-          "arcDegrees": 130,
-          "wallHeightMeters": 0.38,
-          "corridorWidth": 8.0
-        },
-        {
-          "id": "green-wp-3",
-          "type": "WAYPOINT",
-          "position": [44, 65, 15],
-          "corridorWidth": 8.0,
+          "position": [-45, 242, -525],
+          "corridorWidth": 8.2,
           "targetSpeedKmh": 45
         },
         {
-          "id": "green-berm-4",
-          "type": "BERM",
-          "turnDirection": "LEFT",
-          "position": [-66, 38, 145],
-          "radiusMeters": 26,
-          "arcDegrees": 110,
-          "wallHeightMeters": 0.32,
-          "corridorWidth": 8.0
+          "id": "green-fork-1",
+          "type": "FORK",
+          "position": [15, 239, -495],
+          "divergingLineIds": ["LINE_GREEN", "LINE_BLUE"],
+          "signpostLabel": "Col Alpin • Embranchement Singletrack",
+          "recommendedMode": "LONGBOARD"
         },
         {
-          "id": "green-wp-4",
+          "id": "green-palier1-carve-1",
           "type": "WAYPOINT",
-          "position": [36, 18, 270],
+          "position": [58, 237, -465],
+          "corridorWidth": 8.0,
+          "targetSpeedKmh": 42
+        },
+        {
+          "id": "green-palier1-carve-2",
+          "type": "WAYPOINT",
+          "position": [10, 235, -435],
           "corridorWidth": 8.0,
           "targetSpeedKmh": 40
         },
         {
-          "id": "green-wp-5",
+          "id": "green-palier1-carve-3",
           "type": "WAYPOINT",
-          "position": [-42, 6, 385],
+          "position": [-48, 234, -405],
+          "corridorWidth": 8.0,
+          "targetSpeedKmh": 42
+        },
+        {
+          "id": "green-drop2-entry",
+          "type": "WAYPOINT",
+          "position": [-18, 215, -375],
+          "corridorWidth": 8.0,
+          "targetSpeedKmh": 50
+        },
+        {
+          "id": "green-berm-3",
+          "type": "BERM",
+          "turnDirection": "LEFT",
+          "position": [-74, 185, -345],
+          "radiusMeters": 28,
+          "arcDegrees": 135,
+          "wallHeightMeters": 0.45,
+          "corridorWidth": 8.4
+        },
+        {
+          "id": "green-drop2-chicane-1",
+          "type": "WAYPOINT",
+          "position": [15, 160, -315],
+          "corridorWidth": 8.0,
+          "targetSpeedKmh": 55
+        },
+        {
+          "id": "green-berm-4",
+          "type": "BERM",
+          "turnDirection": "RIGHT",
+          "position": [72, 140, -280],
+          "radiusMeters": 26,
+          "arcDegrees": 130,
+          "wallHeightMeters": 0.40,
+          "corridorWidth": 8.4
+        },
+        {
+          "id": "green-palier2-marsh-1",
+          "type": "WAYPOINT",
+          "position": [24, 130, -250],
+          "corridorWidth": 8.0,
+          "targetSpeedKmh": 40
+        },
+        {
+          "id": "green-palier2-marsh-2",
+          "type": "WAYPOINT",
+          "position": [-32, 124, -215],
+          "corridorWidth": 8.0,
+          "targetSpeedKmh": 38
+        },
+        {
+          "id": "green-palier2-marsh-3",
+          "type": "WAYPOINT",
+          "position": [-68, 118, -175],
+          "corridorWidth": 8.0,
+          "targetSpeedKmh": 40
+        },
+        {
+          "id": "green-drop3-canyon-in",
+          "type": "WAYPOINT",
+          "position": [-20, 110, -130],
+          "corridorWidth": 8.0,
+          "targetSpeedKmh": 48
+        },
+        {
+          "id": "green-berm-5",
+          "type": "BERM",
+          "turnDirection": "LEFT",
+          "position": [-74, 82, -85],
+          "radiusMeters": 28,
+          "arcDegrees": 135,
+          "wallHeightMeters": 0.42,
+          "corridorWidth": 8.4
+        },
+        {
+          "id": "green-canyon-bridge",
+          "type": "WAYPOINT",
+          "position": [16, 62, -35],
+          "corridorWidth": 8.0,
+          "targetSpeedKmh": 52
+        },
+        {
+          "id": "green-berm-6",
+          "type": "BERM",
+          "turnDirection": "RIGHT",
+          "position": [76, 45, 20],
+          "radiusMeters": 25,
+          "arcDegrees": 130,
+          "wallHeightMeters": 0.38,
+          "corridorWidth": 8.2
+        },
+        {
+          "id": "green-canyon-chute",
+          "type": "WAYPOINT",
+          "position": [-16, 32, 80],
+          "corridorWidth": 8.0,
+          "targetSpeedKmh": 48
+        },
+        {
+          "id": "green-canyon-out",
+          "type": "WAYPOINT",
+          "position": [-62, 22, 145],
+          "corridorWidth": 8.0,
+          "targetSpeedKmh": 42
+        },
+        {
+          "id": "green-palier3-beach-1",
+          "type": "WAYPOINT",
+          "position": [-10, 16, 215],
+          "corridorWidth": 8.0,
+          "targetSpeedKmh": 36
+        },
+        {
+          "id": "green-palier3-beach-2",
+          "type": "WAYPOINT",
+          "position": [48, 11, 280],
+          "corridorWidth": 8.0,
+          "targetSpeedKmh": 34
+        },
+        {
+          "id": "green-palier3-beach-3",
+          "type": "WAYPOINT",
+          "position": [-20, 6, 355],
           "corridorWidth": 8.0,
           "targetSpeedKmh": 30
+        },
+        {
+          "id": "green-palier3-beach-4",
+          "type": "WAYPOINT",
+          "position": [25, 3, 420],
+          "corridorWidth": 8.0,
+          "targetSpeedKmh": 25
         },
         {
           "id": "green-finish",
@@ -177,14 +316,28 @@
           "bannerTitle": "DÉPART SINGLETRACK VTT"
         },
         {
+          "id": "blue-wp-1",
+          "type": "WAYPOINT",
+          "position": [34, 320, -735],
+          "corridorWidth": 5.2,
+          "targetSpeedKmh": 32
+        },
+        {
           "id": "blue-berm-1",
           "type": "BERM",
           "turnDirection": "LEFT",
-          "position": [38, 305, -700],
+          "position": [62, 305, -700],
           "radiusMeters": 22,
-          "arcDegrees": 95,
+          "arcDegrees": 115,
           "wallHeightMeters": 0.65,
           "corridorWidth": 5.2
+        },
+        {
+          "id": "blue-wp-2",
+          "type": "WAYPOINT",
+          "position": [24, 285, -665],
+          "corridorWidth": 5.2,
+          "targetSpeedKmh": 36
         },
         {
           "id": "blue-kicker-1",
@@ -196,45 +349,128 @@
           "landingSlopeDegrees": 18
         },
         {
+          "id": "blue-wp-3",
+          "type": "WAYPOINT",
+          "position": [48, 248, -580],
+          "corridorWidth": 5.2,
+          "targetSpeedKmh": 38
+        },
+        {
           "id": "blue-road-gap",
           "type": "ROAD_GAP",
-          "position": [-18, 222, -480],
+          "position": [-18, 242, -545],
           "clearsOverLineId": "LINE_GREEN",
           "clearanceHeightMeters": 3.8,
           "gapDistanceMeters": 11.5,
           "riskRating": 3
         },
         {
+          "id": "blue-wp-5",
+          "type": "WAYPOINT",
+          "position": [36, 238, -510],
+          "corridorWidth": 5.2,
+          "targetSpeedKmh": 36
+        },
+        {
+          "id": "blue-wp-6",
+          "type": "WAYPOINT",
+          "position": [58, 215, -470],
+          "corridorWidth": 5.2,
+          "targetSpeedKmh": 42
+        },
+        {
           "id": "blue-kicker-2",
           "type": "KICKER_JUMP",
-          "position": [64, 178, -435],
+          "position": [64, 185, -435],
           "lipHeightMeters": 0.62,
           "tabletopGapMeters": 8.5,
           "approachLengthMeters": 19.0,
           "landingSlopeDegrees": 16
         },
         {
+          "id": "blue-berm-2",
+          "type": "BERM",
+          "turnDirection": "RIGHT",
+          "position": [22, 160, -395],
+          "radiusMeters": 20,
+          "arcDegrees": 120,
+          "wallHeightMeters": 0.65,
+          "corridorWidth": 5.2
+        },
+        {
+          "id": "blue-berm-3",
+          "type": "BERM",
+          "turnDirection": "LEFT",
+          "position": [-26, 145, -355],
+          "radiusMeters": 22,
+          "arcDegrees": 125,
+          "wallHeightMeters": 0.65,
+          "corridorWidth": 5.2
+        },
+        {
+          "id": "blue-wp-7",
+          "type": "WAYPOINT",
+          "position": [16, 135, -315],
+          "corridorWidth": 5.2,
+          "targetSpeedKmh": 44
+        },
+        {
+          "id": "blue-wp-8",
+          "type": "WAYPOINT",
+          "position": [-18, 128, -280],
+          "corridorWidth": 5.2,
+          "targetSpeedKmh": 35
+        },
+        {
           "id": "blue-boardwalk-1",
           "type": "NORTH_SHORE_BOARDWALK",
-          "position": [-44, 140, -250],
+          "position": [-44, 122, -250],
           "deckWidthMeters": 1.6,
           "elevationAboveGroundMeters": 0.75,
           "hasGuardrail": false,
           "lengthMeters": 42.0
         },
         {
+          "id": "blue-wp-9",
+          "type": "WAYPOINT",
+          "position": [-22, 118, -230],
+          "corridorWidth": 5.2,
+          "targetSpeedKmh": 32
+        },
+        {
           "id": "blue-kicker-3",
           "type": "KICKER_JUMP",
-          "position": [24, 102, -210],
+          "position": [24, 116, -210],
           "lipHeightMeters": 0.62,
           "tabletopGapMeters": 8.5,
           "approachLengthMeters": 19.0,
           "landingSlopeDegrees": 17
         },
         {
+          "id": "blue-wp-10",
+          "type": "WAYPOINT",
+          "position": [-16, 115, -170],
+          "corridorWidth": 5.2,
+          "targetSpeedKmh": 36
+        },
+        {
+          "id": "blue-wp-11",
+          "type": "WAYPOINT",
+          "position": [30, 95, -115],
+          "corridorWidth": 5.2,
+          "targetSpeedKmh": 42
+        },
+        {
+          "id": "blue-wp-12",
+          "type": "WAYPOINT",
+          "position": [-36, 75, -70],
+          "corridorWidth": 5.2,
+          "targetSpeedKmh": 38
+        },
+        {
           "id": "blue-flume-1",
           "type": "TIMBER_FLUME",
-          "position": [-56, 72, -25],
+          "position": [-56, 58, -25],
           "troughRadiusMeters": 2.2,
           "rimHeightMeters": 0.9,
           "lengthMeters": 36.0
@@ -249,18 +485,42 @@
           "landingSlopeDegrees": 15
         },
         {
+          "id": "blue-wp-13",
+          "type": "WAYPOINT",
+          "position": [-14, 30, 85],
+          "corridorWidth": 5.2,
+          "targetSpeedKmh": 40
+        },
+        {
+          "id": "blue-wp-14",
+          "type": "WAYPOINT",
+          "position": [32, 22, 155],
+          "corridorWidth": 5.2,
+          "targetSpeedKmh": 36
+        },
+        {
           "id": "blue-kicker-5",
           "type": "KICKER_JUMP",
-          "position": [-28, 22, 235],
+          "position": [-28, 16, 235],
           "lipHeightMeters": 0.62,
           "tabletopGapMeters": 8.5,
           "approachLengthMeters": 19.0,
           "landingSlopeDegrees": 14
         },
         {
+          "id": "blue-berm-4",
+          "type": "BERM",
+          "turnDirection": "RIGHT",
+          "position": [35, 10, 310],
+          "radiusMeters": 22,
+          "arcDegrees": 110,
+          "wallHeightMeters": 0.55,
+          "corridorWidth": 5.2
+        },
+        {
           "id": "blue-kicker-6",
           "type": "KICKER_JUMP",
-          "position": [42, 9, 385],
+          "position": [42, 6, 385],
           "lipHeightMeters": 0.62,
           "tabletopGapMeters": 8.5,
           "approachLengthMeters": 19.0,

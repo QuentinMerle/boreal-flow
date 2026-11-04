@@ -239,9 +239,9 @@ function evaluatePoint(x: number, z: number): {
   let rawH = computeRawMountainElevation(x, z);
   const smoothSlopeH = Math.max(0, computeSmoothSlopeElevation(z));
 
-  const roadHit = findClosestSplineSample(asphaltSamples, x, z, 48);
-  const dirtHit = findClosestSplineSample(dirtSamples, x, z, 42);
-  const riverHit = findClosestSplineSample(riverSamples, x, z, 48);
+  const roadHit = findClosestSplineSample(asphaltSamples, x, z, 58);
+  const dirtHit = findClosestSplineSample(dirtSamples, x, z, 52);
+  const riverHit = findClosestSplineSample(riverSamples, x, z, 58);
 
   const roadDist = Math.sqrt(roadHit.distSq);
   const dirtDist = Math.sqrt(dirtHit.distSq);
