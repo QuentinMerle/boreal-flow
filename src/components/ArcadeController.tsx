@@ -161,17 +161,17 @@ export const ArcadeController: React.FC = () => {
 
     if (spawnTarget === 'SUMMIT_ROAD') {
       p.specialState = 'NONE';
-      p.position.set(-10, 332, -755);
-      p.yaw = -0.05;
+      p.position.set(-10, 335, -756);
+      p.yaw = 0.0;
     } else if (spawnTarget === 'SUMMIT_TRAIL') {
       p.specialState = 'NONE';
-      p.position.set(16, 332, -755);
+      p.position.set(16, 335, -756);
       p.yaw = 0.22;
     } else if (spawnTarget === 'LAKE_SHORE') {
       p.specialState = 'NONE';
-      // Spawn at the High-Mountain Whitewater Rapids Put-In (Z = -312)
-      p.position.set(53.5, 195, -312);
-      p.yaw = -0.05;
+      // Spawn at the High-Mountain Whitewater Rapids Put-In (Z = -316)
+      p.position.set(52, 195, -316);
+      p.yaw = 0.28;
     } else if (spawnTarget === 'FIREWATCH_TOWER') {
       p.specialState = 'NONE';
       p.position.set(TOWER_BASE_X, TOWER_BASE_Y + TOWER_DECK_HEIGHT + 0.3, TOWER_BASE_Z + 2.2);
@@ -738,17 +738,17 @@ export const ArcadeController: React.FC = () => {
       const isDownhillRiverCanoe = isOnWater && mode === 'CANOE' && p.position.z < 480;
       if (p.isGrounded && (!isOnWater || isDownhillRiverCanoe) && !onTowerDeck && mode !== 'WALK') {
         if (mode === 'CANOE') {
-          // Canoe on water: buoyant fluid drag moderates downhill pull (caps rapids around 24-30 km/h max)
+          // Canoe in downhill mountain rapids (Z < 480): rushing torrent & gravity accelerate canoe to 25-45 km/h!
           if (downhillDot >= 0) {
-            forwardVel += downhillDot * 9.5 * preset.gravityScale * dt;
+            forwardVel += downhillDot * 16.5 * preset.gravityScale * dt;
           } else {
-            forwardVel += downhillDot * 32.0 * dt;
+            forwardVel += downhillDot * 36.0 * dt;
           }
-          lateralVel += _slopeDown.dot(_right) * 8.0 * dt;
+          lateralVel += _slopeDown.dot(_right) * 12.0 * dt;
         } else if (downhillDot >= 0) {
           // Downhill gravity acceleration: rewards steep lines & Aero Tuck
-          const tuckGravityBoost = isAeroAttackTuck ? 1.32 : 1.0;
-          const gravityAccel = 15.0 * preset.gravityScale * tuckGravityBoost;
+          const tuckGravityBoost = isAeroAttackTuck ? 1.30 : 1.0;
+          const gravityAccel = 19.5 * preset.gravityScale * tuckGravityBoost;
           forwardVel += downhillDot * gravityAccel * dt;
         } else {
           // Strong uphill gravity resistance: prevents flying uphill at 70 km/h!
@@ -762,8 +762,8 @@ export const ArcadeController: React.FC = () => {
 
       // 5. Mode-Specific Authentic Propulsion ("Lonely Mountains: Downhill" Feel)
       if (mode === 'LONGBOARD') {
-        // Uphill limits foot-pushing ceiling; flat caps at 13.5 m/s (~32 km/h); downhill unleashes gravity!
-        const pushCap = downhillDot < -0.04 ? Math.max(5.5, 11.5 + downhillDot * 32.0) : 13.5;
+        // Fast, buttery foot-pushing: flat caps at 15.5 m/s (~55 km/h); downhill unleashes gravity!
+        const pushCap = downhillDot < -0.04 ? Math.max(6.5, 12.5 + downhillDot * 32.0) : 15.5;
         if (
           accelInput > 0.15 &&
           p.isGrounded &&
@@ -772,24 +772,24 @@ export const ArcadeController: React.FC = () => {
           sp.pushTimer <= 0
         ) {
           const uphillPenalty = downhillDot < 0 ? Math.max(0.35, 1.0 + downhillDot * 2.5) : 1.0;
-          const pushKick = 3.5 * accelInput * uphillPenalty * (p.surface === 'ASPHALT' || p.surface === 'WOOD' ? 1.0 : 0.55);
-          forwardVel = Math.min(pushCap + 0.8, forwardVel + pushKick);
-          sp.pushTimer = 0.54;
-          sp.pushAnimTimer = 0.38;
+          const pushKick = 4.2 * accelInput * uphillPenalty * (p.surface === 'ASPHALT' || p.surface === 'WOOD' ? 1.0 : 0.55);
+          forwardVel = Math.min(pushCap + 1.5, forwardVel + pushKick);
+          sp.pushTimer = 0.48;
+          sp.pushAnimTimer = 0.36;
           soundscape.triggerFootPushSound();
           triggerHaptic(pad, 55, 0.2, 0.25);
         }
 
         const steerDelta = Math.abs(steerInput - sp.prevSteer);
-        p.isPumping = p.isGrounded && !p.isDrifting && Math.abs(steerInput) > 0.12 && forwardVel > 3.0;
+        p.isPumping = p.isGrounded && !p.isDrifting && Math.abs(steerInput) > 0.10 && forwardVel > 2.5;
         if (
-          steerDelta > 0.18 &&
+          steerDelta > 0.12 &&
           p.isGrounded &&
-          downhillDot > -0.02 &&
-          forwardVel > 2.5 &&
+          downhillDot > -0.04 &&
+          forwardVel > 2.0 &&
           forwardVel < preset.maxSpeed
         ) {
-          forwardVel += (p.surface === 'ASPHALT' || p.surface === 'WOOD' ? 0.68 : 0.25) * steerDelta;
+          forwardVel += (p.surface === 'ASPHALT' || p.surface === 'WOOD' ? 0.85 : 0.35) * steerDelta;
         }
         if (wantsHop && !p.isDrifting && p.isGrounded && sp.hopCooldown <= 0) {
           p.velocity.y = preset.hopImpulse;
@@ -855,8 +855,10 @@ export const ArcadeController: React.FC = () => {
 
         if (isOnWater) {
           getRiverCurrentVector(p.position.x, p.position.z, _riverCurrent);
-          forwardVel += _riverCurrent.dot(_forward) * 0.45 * dt;
-          lateralVel += _riverCurrent.dot(_right) * 0.45 * dt;
+          // Rushing mountain rapids stream propels canoe along flow
+          const currentPush = mode === 'CANOE' ? 1.55 : 0.45;
+          forwardVel += _riverCurrent.dot(_forward) * currentPush * dt;
+          lateralVel += _riverCurrent.dot(_right) * currentPush * dt;
         }
       } else {
         // WALK mode
@@ -885,13 +887,14 @@ export const ArcadeController: React.FC = () => {
       let surfaceDragMultiplier = 1.0;
       if (mode === 'LONGBOARD') {
         if (p.surface === 'ASPHALT' || p.surface === 'WOOD') {
-          surfaceDragMultiplier = isAeroAttackTuck ? 0.34 : 0.56;
+          // Buttery urethane roll: low friction on smooth pavement
+          surfaceDragMultiplier = isAeroAttackTuck ? 0.22 : 0.38;
         } else if (p.surface === 'DIRT') {
-          surfaceDragMultiplier = 2.4;
+          surfaceDragMultiplier = 2.0;
         } else if (p.surface === 'GRASS' || p.surface === 'SAND' || p.surface === 'ROCK') {
-          surfaceDragMultiplier = 5.2;
+          surfaceDragMultiplier = 4.8;
         } else if (p.surface === 'WATER') {
-          surfaceDragMultiplier = 9.0;
+          surfaceDragMultiplier = 8.0;
         }
       } else if (mode === 'BIKE') {
         if (p.surface === 'DIRT' || p.surface === 'ASPHALT' || p.surface === 'WOOD') {
@@ -903,26 +906,26 @@ export const ArcadeController: React.FC = () => {
           surfaceDragMultiplier = 5.5;
         }
       } else if (mode === 'CANOE') {
-        surfaceDragMultiplier = isOnWater ? 0.55 : 6.5;
+        surfaceDragMultiplier = isOnWater ? 0.45 : 6.5;
       }
 
       const drag = preset.rollingResistance * surfaceDragMultiplier;
       forwardVel = THREE.MathUtils.damp(forwardVel, 0, drag, dt);
 
       // Aerodynamic wind drag: quadratic air resistance (F_aero ~ v^2)
-      // Balances speed around 38-50 km/h on gentle slopes, 65-75 km/h on drops, 80+ km/h only when tucked!
+      // Longboard glides effortlessly up to 60-70 km/h, Aero Attack Tuck reaches 80+ km/h!
       if (mode === 'LONGBOARD' || mode === 'BIKE') {
-        const aeroDragCoeff = isAeroAttackTuck ? 0.0016 : (mode === 'LONGBOARD' ? 0.0038 : 0.0044);
+        const aeroDragCoeff = isAeroAttackTuck ? 0.0010 : (mode === 'LONGBOARD' ? 0.0022 : 0.0034);
         const aeroDecel = forwardVel * Math.abs(forwardVel) * aeroDragCoeff;
         forwardVel -= aeroDecel * dt;
       }
 
-      // Carve Scrubbing: leaning hard into tight turns scrubs tire/wheel friction against the ground
+      // Carve Scrubbing: only scrubs when turning very sharply (> 0.38) at high speed
       if ((mode === 'LONGBOARD' || mode === 'BIKE') && p.isGrounded && !p.isDrifting) {
         const steerMagnitude = Math.abs(steerInput);
-        if (steerMagnitude > 0.20 && forwardVel > 7.0) {
-          const scrubRate = mode === 'LONGBOARD' ? 3.4 : 2.8;
-          const scrubDecel = (steerMagnitude - 0.20) * scrubRate * (forwardVel / preset.maxSpeed);
+        if (steerMagnitude > 0.38 && forwardVel > 12.0) {
+          const scrubRate = mode === 'LONGBOARD' ? 1.8 : 1.5;
+          const scrubDecel = (steerMagnitude - 0.38) * scrubRate * (forwardVel / preset.maxSpeed);
           forwardVel = Math.max(0, forwardVel - scrubDecel * dt);
         }
       }

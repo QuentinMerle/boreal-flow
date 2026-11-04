@@ -38,14 +38,14 @@ export const TriathlonCourse: React.FC = () => {
   const smokeMeshRef = useRef<THREE.InstancedMesh>(null);
   const smokeMatRef = useRef<THREE.MeshStandardMaterial>(null);
 
-  // Summit Start Marker Coordinates (1,600m Map)
-  const startX = -12;
-  const startZ = -715;
+  // Summit Start Marker Coordinates (Aligned with START_GATE on 1,600m Map)
+  const startX = -10.0;
+  const startZ = -758.0;
   const summitY = getTerrainHeightOnly(startX, startZ);
 
-  // Lakeside Finish Gate Coordinates (1,600m Map)
-  const finishX = -15.0;
-  const finishZ = 460.0;
+  // Lakeside Finish Gate Coordinates (Spanning the finish road ahead of campsite)
+  const finishX = -28.0;
+  const finishZ = 455.0;
   const finishY = getTerrainHeightOnly(finishX, finishZ);
 
   // Exact Campfire Stone Pit Coordinates matching TerrainChunk.tsx
@@ -210,55 +210,55 @@ export const TriathlonCourse: React.FC = () => {
         />
       </instancedMesh>
 
-      {/* Summit Trailhead Start Arch (at z = -420) */}
+      {/* Summit Trailhead Start Arch (at z = -758) */}
       <group position={[startX, summitY, startZ]}>
         {/* Left Post */}
-        <mesh castShadow receiveShadow position={[-3.2, 2.1, 0]}>
-          <cylinderGeometry args={[0.22, 0.24, 4.4, 7]} />
+        <mesh castShadow receiveShadow position={[-4.5, 2.3, 0]}>
+          <cylinderGeometry args={[0.24, 0.26, 4.8, 7]} />
           <meshStandardMaterial color="#6a492b" flatShading roughness={0.9} />
         </mesh>
         {/* Right Post */}
-        <mesh castShadow receiveShadow position={[3.2, 2.1, 0]}>
-          <cylinderGeometry args={[0.22, 0.24, 4.4, 7]} />
+        <mesh castShadow receiveShadow position={[4.5, 2.3, 0]}>
+          <cylinderGeometry args={[0.24, 0.26, 4.8, 7]} />
           <meshStandardMaterial color="#6a492b" flatShading roughness={0.9} />
         </mesh>
         {/* Horizontal Wooden Lintel */}
-        <mesh castShadow receiveShadow position={[0, 4.0, 0]}>
-          <boxGeometry args={[7.2, 0.45, 0.35]} />
+        <mesh castShadow receiveShadow position={[0, 4.4, 0]}>
+          <boxGeometry args={[9.8, 0.5, 0.4]} />
           <meshStandardMaterial color="#8b5a2b" flatShading roughness={0.88} />
         </mesh>
         {/* Start Signboard */}
-        <mesh position={[0, 3.4, 0.12]}>
-          <boxGeometry args={[4.8, 0.75, 0.1]} />
+        <mesh position={[0, 3.7, 0.14]}>
+          <boxGeometry args={[6.8, 0.85, 0.12]} />
           <meshStandardMaterial color="#eb5e46" flatShading roughness={0.85} />
         </mesh>
       </group>
 
-      {/* Lakeside Finish Arch (at z = +230) */}
-      <group position={[finishX, finishY, finishZ]} rotation={[0, -0.22, 0]}>
+      {/* Lakeside Finish Arch (Spanning road at z = +455) */}
+      <group position={[finishX, finishY, finishZ]} rotation={[0, 0.08, 0]}>
         {/* Left Post */}
-        <mesh castShadow receiveShadow position={[-3.0, 2.2, 0]}>
-          <cylinderGeometry args={[0.24, 0.26, 4.6, 7]} />
+        <mesh castShadow receiveShadow position={[-4.5, 2.3, 0]}>
+          <cylinderGeometry args={[0.26, 0.28, 4.8, 7]} />
           <meshStandardMaterial color="#5c3d22" flatShading roughness={0.9} />
         </mesh>
         {/* Right Post */}
-        <mesh castShadow receiveShadow position={[3.0, 2.2, 0]}>
-          <cylinderGeometry args={[0.24, 0.26, 4.6, 7]} />
+        <mesh castShadow receiveShadow position={[4.5, 2.3, 0]}>
+          <cylinderGeometry args={[0.26, 0.28, 4.8, 7]} />
           <meshStandardMaterial color="#5c3d22" flatShading roughness={0.9} />
         </mesh>
         {/* Crossbeam */}
-        <mesh castShadow receiveShadow position={[0, 4.2, 0]}>
-          <boxGeometry args={[6.8, 0.5, 0.38]} />
+        <mesh castShadow receiveShadow position={[0, 4.4, 0]}>
+          <boxGeometry args={[9.8, 0.52, 0.42]} />
           <meshStandardMaterial color="#7a4b27" flatShading roughness={0.88} />
         </mesh>
         {/* Finish Banner */}
-        <mesh position={[0, 3.5, 0.14]}>
-          <boxGeometry args={[5.2, 0.85, 0.1]} />
+        <mesh position={[0, 3.65, 0.16]}>
+          <boxGeometry args={[7.2, 0.95, 0.12]} />
           <meshStandardMaterial color="#ffd166" flatShading roughness={0.8} />
         </mesh>
         {/* Hanging Lantern */}
-        <mesh position={[0, 2.8, 0]}>
-          <cylinderGeometry args={[0.12, 0.16, 0.32, 6]} />
+        <mesh position={[0, 2.9, 0]}>
+          <cylinderGeometry args={[0.14, 0.18, 0.36, 6]} />
           <meshStandardMaterial color="#f4a261" emissive="#ff9f1c" emissiveIntensity={0.8} />
         </mesh>
       </group>
