@@ -36,6 +36,11 @@ class BorealSoundscape {
   private knobbyFilter: BiquadFilterNode | null = null;
   private knobbyGain: GainNode | null = null;
 
+  // Session 3: North Shore Boardwalk Rhythmic Wooden Plank Clatter ("tac-tac-tac")
+  private woodPlankOsc: OscillatorNode | null = null;
+  private woodPlankFilter: BiquadFilterNode | null = null;
+  private woodPlankGain: GainNode | null = null;
+
   private zipOsc: OscillatorNode | null = null;
   private zipGain: GainNode | null = null;
 
@@ -229,6 +234,21 @@ class BorealSoundscape {
     this.knobbyFilter.connect(this.knobbyGain);
     this.knobbyGain.connect(this.masterGain);
     knobbySource.start(1.4);
+
+    // 9. Session 3: North Shore Boardwalk Rhythmic Wooden Plank Clatter ("tac-tac-tac")
+    this.woodPlankOsc = this.ctx.createOscillator();
+    this.woodPlankOsc.type = 'sawtooth';
+    this.woodPlankOsc.frequency.value = 45;
+    this.woodPlankFilter = this.ctx.createBiquadFilter();
+    this.woodPlankFilter.type = 'bandpass';
+    this.woodPlankFilter.frequency.value = 580; // Resonant hollow cedar plank acoustics
+    this.woodPlankFilter.Q.value = 4.5;
+    this.woodPlankGain = this.ctx.createGain();
+    this.woodPlankGain.gain.value = 0.0;
+    this.woodPlankOsc.connect(this.woodPlankFilter);
+    this.woodPlankFilter.connect(this.woodPlankGain);
+    this.woodPlankGain.connect(this.masterGain);
+    this.woodPlankOsc.start();
 
     this.lastPoofCounter = mutablePhysics.poofCounter;
     this.lastEmoteCounter = mutablePhysics.emoteCounter;
@@ -653,6 +673,7 @@ class BorealSoundscape {
       if (this.driftGain) this.driftGain.gain.setTargetAtTime(0, now, 0.08);
       if (this.waterGain) this.waterGain.gain.setTargetAtTime(0, now, 0.08);
       if (this.zipGain) this.zipGain.gain.setTargetAtTime(0, now, 0.08);
+      if (this.woodPlankGain) this.woodPlankGain.gain.setTargetAtTime(0, now, 0.08);
       return;
     }
 
@@ -690,13 +711,14 @@ class BorealSoundscape {
     if (this.rollFilter && this.rollGain && this.urethaneOsc && this.urethaneOscGain) {
       if (onLand && p.speed > 0.6 && mode !== 'WALK') {
         const isAsphalt = p.surface === 'ASPHALT';
+        const isWood = p.surface === 'WOOD';
         const isLongboard = mode === 'LONGBOARD';
-        const baseFreq = isAsphalt ? 190 : 950;
-        const freqSpan = isAsphalt ? 320 : 1400;
+        const baseFreq = isAsphalt ? 190 : (isWood ? 380 : 950);
+        const freqSpan = isAsphalt ? 320 : (isWood ? 450 : 1400);
         this.rollFilter.frequency.setTargetAtTime(baseFreq + speedRatio * freqSpan, now, 0.06);
-        this.rollFilter.Q.setTargetAtTime(isAsphalt ? 1.8 : 0.7, now, 0.08);
+        this.rollFilter.Q.setTargetAtTime(isAsphalt ? 1.8 : (isWood ? 2.2 : 0.7), now, 0.08);
         this.rollGain.gain.setTargetAtTime(
-          THREE.MathUtils.clamp(speedRatio * (isAsphalt ? 0.24 : 0.32), 0, 0.35),
+          THREE.MathUtils.clamp(speedRatio * (isAsphalt ? 0.24 : (isWood ? 0.20 : 0.32)), 0, 0.35),
           now,
           0.06
         );
@@ -754,6 +776,26 @@ class BorealSoundscape {
         this.knobbyFilter.frequency.setTargetAtTime(1380 + tireSlip * 520, now, 0.05);
       } else {
         this.knobbyGain.gain.setTargetAtTime(0, now, 0.05);
+      }
+    }
+
+    // 2d. Session 3: North Shore Boardwalk Rhythmic Wooden Plank Clatter ("tac-tac-tac")
+    if (this.woodPlankOsc && this.woodPlankFilter && this.woodPlankGain) {
+      const onWood =
+        p.surface === 'WOOD' &&
+        p.isGrounded &&
+        p.speed > 0.8 &&
+        p.specialState === 'NONE';
+
+      if (onWood) {
+        // Plank impact frequency proportional to speed: ~3.6 impacts per meter (planks ~28cm apart)
+        const plankFreq = THREE.MathUtils.clamp(p.speed * 3.6, 18, 95);
+        const plankVol = Math.min(0.32, 0.08 + speedRatio * 0.24);
+        this.woodPlankOsc.frequency.setTargetAtTime(plankFreq, now, 0.03);
+        this.woodPlankFilter.frequency.setTargetAtTime(560 + speedRatio * 180, now, 0.05);
+        this.woodPlankGain.gain.setTargetAtTime(plankVol, now, 0.03);
+      } else {
+        this.woodPlankGain.gain.setTargetAtTime(0, now, 0.035);
       }
     }
 

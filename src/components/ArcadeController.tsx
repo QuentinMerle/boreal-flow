@@ -772,7 +772,7 @@ export const ArcadeController: React.FC = () => {
           sp.pushTimer <= 0
         ) {
           const uphillPenalty = downhillDot < 0 ? Math.max(0.35, 1.0 + downhillDot * 2.5) : 1.0;
-          const pushKick = 3.5 * accelInput * uphillPenalty * (p.surface === 'ASPHALT' ? 1.0 : 0.55);
+          const pushKick = 3.5 * accelInput * uphillPenalty * (p.surface === 'ASPHALT' || p.surface === 'WOOD' ? 1.0 : 0.55);
           forwardVel = Math.min(pushCap + 0.8, forwardVel + pushKick);
           sp.pushTimer = 0.54;
           sp.pushAnimTimer = 0.38;
@@ -789,7 +789,7 @@ export const ArcadeController: React.FC = () => {
           forwardVel > 2.5 &&
           forwardVel < preset.maxSpeed
         ) {
-          forwardVel += (p.surface === 'ASPHALT' ? 0.68 : 0.25) * steerDelta;
+          forwardVel += (p.surface === 'ASPHALT' || p.surface === 'WOOD' ? 0.68 : 0.25) * steerDelta;
         }
         if (wantsHop && !p.isDrifting && p.isGrounded && sp.hopCooldown <= 0) {
           p.velocity.y = preset.hopImpulse;
@@ -884,7 +884,7 @@ export const ArcadeController: React.FC = () => {
       // 6. Surface Friction, Off-Road Penalties & Braking
       let surfaceDragMultiplier = 1.0;
       if (mode === 'LONGBOARD') {
-        if (p.surface === 'ASPHALT') {
+        if (p.surface === 'ASPHALT' || p.surface === 'WOOD') {
           surfaceDragMultiplier = isAeroAttackTuck ? 0.34 : 0.56;
         } else if (p.surface === 'DIRT') {
           surfaceDragMultiplier = 2.4;
@@ -894,7 +894,7 @@ export const ArcadeController: React.FC = () => {
           surfaceDragMultiplier = 9.0;
         }
       } else if (mode === 'BIKE') {
-        if (p.surface === 'DIRT' || p.surface === 'ASPHALT') {
+        if (p.surface === 'DIRT' || p.surface === 'ASPHALT' || p.surface === 'WOOD') {
           surfaceDragMultiplier = isAeroAttackTuck ? 0.35 : 0.52;
         } else if (p.surface === 'GRASS' || p.surface === 'SAND' || p.surface === 'ROCK') {
           // VTT is built for freeride off-road: minimal speed loss on grass/rock!

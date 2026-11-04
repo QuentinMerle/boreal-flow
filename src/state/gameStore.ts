@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import * as THREE from 'three';
 
 export type MovementMode = 'WALK' | 'LONGBOARD' | 'BIKE' | 'CANOE';
-export type SurfaceType = 'ASPHALT' | 'DIRT' | 'GRASS' | 'ROCK' | 'SAND' | 'WATER';
+export type SurfaceType = 'ASPHALT' | 'DIRT' | 'GRASS' | 'ROCK' | 'SAND' | 'WATER' | 'WOOD';
 export type TimePreset = 'DAWN' | 'NOON' | 'GOLDEN' | 'NIGHT';
 export type SpecialActionState = 'NONE' | 'ZIPLINE' | 'CAMPFIRE';
 export type CameraMode = 'DIORAMA' | 'COCKPIT';

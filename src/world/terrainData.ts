@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { fbm2D, simplex2D } from '../math/noise';
 import { SurfaceType, MovementMode } from '../state/gameStore';
+import { COMPILED_BOREAL_COURSE } from './courseAst';
 
 // Session 3 Upgrade: 1,600m "Red Bull Rampage -> Boreal Forest -> Mirror Lake" Megamap
 export const TERRAIN_WIDTH = 440; // X: -220 to +220
@@ -9,54 +10,14 @@ export const GRID_SEGMENTS_X = 230; // ~1.91m per cell
 export const GRID_SEGMENTS_Z = 720; // ~2.22m per cell
 export const WATER_LEVEL = 0.0;
 
-// 1. Scenic Asphalt Road Spline (Sweeping S-curves & hairpins from Z=-762 summit to Z=+480 lake camp)
-export const ASPHALT_SPLINE_POINTS = [
-  new THREE.Vector3(-10, 0, -762),
-  new THREE.Vector3(-12, 0, -715),
-  new THREE.Vector3(-68, 0, -610),
-  new THREE.Vector3(48, 0, -495),
-  new THREE.Vector3(-76, 0, -370),
-  new THREE.Vector3(52, 0, -245),
-  new THREE.Vector3(-72, 0, -115),
-  new THREE.Vector3(44, 0, 15),
-  new THREE.Vector3(-66, 0, 145),
-  new THREE.Vector3(36, 0, 270),
-  new THREE.Vector3(-42, 0, 385),
-  new THREE.Vector3(-15, 0, 480),
-];
+// Dynamic Splines compiled directly from declarative JSON-AST (course.boreal.json)
+export const asphaltCurve = COMPILED_BOREAL_COURSE.lines.get('LINE_GREEN')!.curve;
+export const dirtCurve = COMPILED_BOREAL_COURSE.lines.get('LINE_BLUE')!.curve;
+export const riverCurve = COMPILED_BOREAL_COURSE.lines.get('LINE_RIVER')!.curve;
 
-// 2. Dirt Singletrack VTT Trail Spline (Upper "Red Bull Rampage" ridge line + mid-forest berms & kickers)
-export const DIRT_SPLINE_POINTS = [
-  new THREE.Vector3(16, 0, -762),
-  new THREE.Vector3(38, 0, -700),
-  new THREE.Vector3(78, 0, -595),
-  new THREE.Vector3(-18, 0, -480),
-  new THREE.Vector3(64, 0, -365),
-  new THREE.Vector3(-44, 0, -250),
-  new THREE.Vector3(24, 0, -140),
-  new THREE.Vector3(-56, 0, -25),
-  new THREE.Vector3(48, 0, 95),
-  new THREE.Vector3(-28, 0, 215),
-  new THREE.Vector3(42, 0, 340),
-  new THREE.Vector3(14, 0, 475),
-];
-
-// 3. Downhill Whitewater Kayak/Canoe River Spline (Starts at Z=-320 canyon headwaters and rushes to Mirror Lake at Z=+485)
-export const RIVER_SPLINE_POINTS = [
-  new THREE.Vector3(54, 0, -320),
-  new THREE.Vector3(84, 0, -210),
-  new THREE.Vector3(52, 0, -95),
-  new THREE.Vector3(86, 0, 20),
-  new THREE.Vector3(56, 0, 140),
-  new THREE.Vector3(82, 0, 260),
-  new THREE.Vector3(48, 0, 375),
-  new THREE.Vector3(24, 0, 482),
-  new THREE.Vector3(4, 0, 565),
-];
-
-export const asphaltCurve = new THREE.CatmullRomCurve3(ASPHALT_SPLINE_POINTS, false, 'catmullrom', 0.5);
-export const dirtCurve = new THREE.CatmullRomCurve3(DIRT_SPLINE_POINTS, false, 'catmullrom', 0.5);
-export const riverCurve = new THREE.CatmullRomCurve3(RIVER_SPLINE_POINTS, false, 'catmullrom', 0.5);
+export const ASPHALT_SPLINE_POINTS = asphaltCurve.points;
+export const DIRT_SPLINE_POINTS = dirtCurve.points;
+export const RIVER_SPLINE_POINTS = riverCurve.points;
 
 interface SampledSplinePoint {
   x: number;
@@ -95,19 +56,66 @@ function evaluateAnalyticalDirtKicker(z: number): number {
 }
 
 /**
- * Pure C-infinity analytical mountain slope elevation at any Z coordinate (1,600m map).
- * Drops 335m from the steep "Red Bull Rampage" summit (Z=-765) down to Mirror Lake (Z=+480).
+ * Analytical Stepped Mountain Slope Elevation (1,600m Course).
+ * Replaces monotonic plunge with 3 Geological Terraces & Respiration Steps:
+ * 1. Drop 1 (Summit Plunge): 335m -> 255m (Z: -765 -> -630)
+ * 2. Palier 1 (Rolling Alpine Pass): 255m -> 235m (Z: -630 -> -490, 2-4% descent with pumping rollers)
+ * 3. Drop 2 (Old-Growth Taïga Chute): 235m -> 135m (Z: -490 -> -280)
+ * 4. Palier 2 (Wetland & North Shore Boardwalk): 135m -> 115m (Z: -280 -> -130, flat carving & wood planks)
+ * 5. Drop 3 (Canyon Rapids Plunge): 115m -> 25m (Z: -130 -> 180)
+ * 6. Palier 3 (Mirror Lake Delta & Beach): 25m -> 0m (Z: 180 -> 480)
+ * 7. Underwater Basin: 0m -> -8m (Z > 480)
  */
 export function computeSmoothSlopeElevation(z: number): number {
-  const slopeT = THREE.MathUtils.clamp((z + 765) / 1245, 0, 1.35);
-  if (slopeT <= 1.0) {
-    const smooth = 1.0 - slopeT;
-    // Steeper upper Rampage headwall (power 1.52) transitioning into fast flowing mid-mountain valley
-    return 335.0 * Math.pow(smooth, 1.52);
-  } else {
+  if (z <= -765) return 335.0;
+  if (z >= 480) {
     const waterT = THREE.MathUtils.clamp((z - 480) / 245, 0, 1);
     return -8.0 * Math.sin(waterT * Math.PI * 0.5);
   }
+
+  // 1. Drop 1 : Sommet des Rocheuses (-765 à -630) -> 335m à 255m
+  if (z < -630) {
+    const t = (z - -765) / (-630 - -765);
+    const s = t * t * (3 - 2 * t);
+    return THREE.MathUtils.lerp(335.0, 255.0, s);
+  }
+
+  // 2. Palier 1 : Col Alpin Vallonné (-630 à -490) -> 255m à 235m (pente douce avec rollers)
+  if (z < -490) {
+    const t = (z - -630) / (-490 - -630);
+    const s = t * t * (3 - 2 * t);
+    const baseH = THREE.MathUtils.lerp(255.0, 235.0, s);
+    const roller = Math.sin(t * Math.PI * 2) * Math.sin(t * Math.PI) * 1.4;
+    return baseH + roller;
+  }
+
+  // 3. Drop 2 : Goulotte Forestière (-490 à -280) -> 235m à 135m
+  if (z < -280) {
+    const t = (z - -490) / (-280 - -490);
+    const s = t * t * (3 - 2 * t);
+    return THREE.MathUtils.lerp(235.0, 135.0, s);
+  }
+
+  // 4. Palier 2 : Marais aux Épinettes & North Shore (-280 à -130) -> 135m à 115m (rollers doux)
+  if (z < -130) {
+    const t = (z - -280) / (-130 - -280);
+    const s = t * t * (3 - 2 * t);
+    const baseH = THREE.MathUtils.lerp(135.0, 115.0, s);
+    const roller = Math.sin(t * Math.PI * 2) * Math.sin(t * Math.PI) * 0.9;
+    return baseH + roller;
+  }
+
+  // 5. Drop 3 : Chute du Canyon (-130 à 180) -> 115m à 25m
+  if (z < 180) {
+    const t = (z - -130) / (180 - -130);
+    const s = t * t * (3 - 2 * t);
+    return THREE.MathUtils.lerp(115.0, 25.0, s);
+  }
+
+  // 6. Palier 3 : Delta & Plage du Lac Miroir (180 à 480) -> 25m à 0m
+  const t = (z - 180) / (480 - 180);
+  const s = t * t * (3 - 2 * t);
+  return THREE.MathUtils.lerp(25.0, 0.0, s);
 }
 
 // Base mountain profile before spline carving (1,600m canyon from Z=-800 to Z=+800)
@@ -329,13 +337,11 @@ export function getTerrainHeightOnly(x: number, z: number): number {
 }
 
 // Update spline Y coordinates so prop placement has exact 3D heights
-for (let i = 0; i < ASPHALT_SPLINE_POINTS.length; i++) {
-  const pt = ASPHALT_SPLINE_POINTS[i];
-  pt.y = getTerrainHeightOnly(pt.x, pt.z) + 0.2;
-}
-for (let i = 0; i < DIRT_SPLINE_POINTS.length; i++) {
-  const pt = DIRT_SPLINE_POINTS[i];
-  pt.y = getTerrainHeightOnly(pt.x, pt.z) + 0.2;
+for (const line of COMPILED_BOREAL_COURSE.lines.values()) {
+  for (let i = 0; i < line.curve.points.length; i++) {
+    const pt = line.curve.points[i];
+    pt.y = getTerrainHeightOnly(pt.x, pt.z) + 0.2;
+  }
 }
 
 // --- Fallen Tree Log Hurdles across Road & Singletrack (Bunny-Hop Obstacles) ---
@@ -423,7 +429,7 @@ export function getRiverCurrentVector(x: number, z: number, outVec: THREE.Vector
   return outVec;
 }
 
-const SURFACE_MAP: SurfaceType[] = ['GRASS', 'ASPHALT', 'DIRT', 'ROCK', 'SAND', 'WATER'];
+const SURFACE_MAP: SurfaceType[] = ['GRASS', 'ASPHALT', 'DIRT', 'ROCK', 'SAND', 'WATER', 'WOOD'];
 
 export interface TerrainSample {
   height: number;
@@ -478,13 +484,18 @@ export function sampleTerrain(x: number, z: number, outNormal: THREE.Vector3): T
   const nearZ = fz < 0.5 ? iz : iz + 1;
   const sCode = surfaceGrid[nearZ * COLS + nearX] ?? 0;
 
+  // North Shore Wooden Boardwalk (Palier 2) & Timber Flume physical deck detection
+  const isNorthShore = z > -272 && z < -228 && Math.abs(x - -44) < 3.2;
+  const isTimberFlume = z > -45 && z < -5 && Math.abs(x - -56) < 3.0;
+  const isWood = isNorthShore || isTimberFlume;
+
   // In the Downhill Whitewater River (sCode === 5 at z < 485), waterDepth is 1.2m so Canoe/Kayak glides down the slope!
   const lakeDepth = Math.max(0, WATER_LEVEL - height);
   const waterDepth = sCode === 5 ? Math.max(1.2, lakeDepth) : lakeDepth;
 
-  _sampleResult.height = height;
+  _sampleResult.height = isWood ? height + 0.55 : height;
   _sampleResult.waterDepth = waterDepth;
-  _sampleResult.surface = waterDepth > 0.25 ? 'WATER' : (SURFACE_MAP[sCode] ?? 'GRASS');
+  _sampleResult.surface = isWood ? 'WOOD' : (waterDepth > 0.25 ? 'WATER' : (SURFACE_MAP[sCode] ?? 'GRASS'));
 
   return _sampleResult;
 }

@@ -129,9 +129,11 @@ export const DioramaCamera: React.FC = () => {
           ? 1.2
           : p.surface === 'DIRT'
             ? 0.85
-            : p.surface === 'ASPHALT'
-              ? 0.35
-              : 0.9;
+            : p.surface === 'WOOD'
+              ? 0.65
+              : p.surface === 'ASPHALT'
+                ? 0.35
+                : 0.9;
     const shakeAmp =
       THREE.MathUtils.smoothstep(speed, 14.0, 34.0) * 0.026 * surfaceRough;
     const shakeX = Math.sin(tNow * 22.0) * shakeAmp;
